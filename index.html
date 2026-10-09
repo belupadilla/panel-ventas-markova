@@ -340,7 +340,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 09/10/2026 · 19:10</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 09/10/2026 · 19:25</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -714,7 +714,7 @@ document.addEventListener('change', e=>{
 });
 
 // ---- Archivos adjuntos en planes de acción ----
-const ATT_CHUNK = 450000, ATT_MAX = 3*1024*1024;
+const ATT_CHUNK = 450000, ATT_MAX = 10*1024*1024;
 let pendingPlanAttachments = [];
 const SHEET_EXT = ['xlsx','xlsm','xls','csv'];
 function attExt(name){ const m=/\.([a-z0-9]+)$/i.exec(name||''); return m?m[1].toLowerCase():''; }
@@ -741,7 +741,7 @@ async function deleteAttData(att){ for(let i=0;i<(att.chunks||0);i++){ await DB.
 async function readPickedFiles(fileList){
   const out=[];
   for(const f of Array.from(fileList)){
-    if(f.size>ATT_MAX){ showToast('"'+f.name+'" pesa más de 3 MB y no se puede adjuntar.'); continue; }
+    if(f.size>ATT_MAX){ showToast('"'+f.name+'" pesa más de 10 MB y no se puede adjuntar.'); continue; }
     out.push({ id:uid()+uid(), name:f.name, size:f.size, type:f.type||'', b64: bufToB64(await f.arrayBuffer()) });
   }
   return out;
@@ -767,7 +767,7 @@ function attachmentsSectionHtml(p){
   }).join('');
   return `<div class="plan-section attachments">
     <div class="plan-section-head">Archivos adjuntos <span class="n">${items.length}</span></div>
-    <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">Adjuntá Excel, Word, PDF, imágenes o lo que necesites (hasta 3 MB por archivo). Los Excel y CSV se pueden abrir y modificar acá mismo.${draft?' Se suben al crear el plan.':''}</p>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">Adjuntá Excel, Word, PDF, imágenes o lo que necesites (hasta 10 MB por archivo). Los Excel y CSV se pueden abrir y modificar acá mismo.${draft?' Se suben al crear el plan.':''}</p>
     ${items.length?`<div class="att-list">${rows}</div>`:''}
     <label class="btn solid" for="attFile-${pid}" style="font-size:12.5px;display:inline-block;cursor:pointer;">+ Adjuntar archivo</label>
     <input type="file" multiple hidden id="attFile-${pid}" class="att-file" data-plan="${pid}">
@@ -827,7 +827,7 @@ document.addEventListener('click', e=>{
 
 // ---- Editor de hojas de cálculo ----
 let ED = null; // {plan, att, wb, sheet, dirty, edits:{}}
-const ED_MAX_ROWS = 500, ED_MAX_COLS = 40;
+const ED_BATCH = 200, ED_MAX_COLS = 120;
 function parseCellInput(txt, prev){
   const t = txt.trim();
   if(t==='') return null;
@@ -851,7 +851,10 @@ function edSelLabel(){
 }
 function edRenderGrid(){
   const ws = ED.wb.Sheets[ED.sheet]; const r = edRange(ws);
-  const rows = Math.min(r.e.r, ED_MAX_ROWS-1), cols = Math.min(r.e.c, ED_MAX_COLS-1);
+  if(!ED.shown) ED.shown = ED_BATCH;
+  if(ED.sel && ED.sel.r+1>ED.shown) ED.shown = ED.sel.r+1;
+  const rows = Math.min(r.e.r, ED.shown-1), cols = Math.min(r.e.c, ED_MAX_COLS-1);
+  const prevScroll = document.getElementById('sheetGrid').scrollTop;
   let h = '<table><colgroup><col style="width:42px">';
   for(let c=0;c<=cols;c++) h += '<col data-c="'+c+'" style="width:'+edColW(ws,c)+'px">';
   h += '</colgroup><thead><tr><th class="rn"></th>';
@@ -864,12 +867,17 @@ function edRenderGrid(){
       const cell = ws[addr];
       const val = cell ? (cell.w!==undefined ? cell.w : (cell.v!==undefined ? String(cell.v) : '')) : '';
       const fx = cell && cell.f;
-      h += '<td class="'+(fx?'fx':'')+'"><textarea rows="1" data-addr="'+addr+'" data-r="'+i+'" data-c="'+c+'" '+(fx?'readonly title="Fórmula: ='+escapeHtml(String(cell.f))+'"':'')+'>'+escapeHtml(val)+'</textarea></td>';
+      h += '<td class="'+(fx?'fx':'')+((ED.editedSet&&ED.editedSet.has(addr))?' ed':'')+'"><textarea rows="1" data-addr="'+addr+'" data-r="'+i+'" data-c="'+c+'" '+(fx?'readonly title="Fórmula: ='+escapeHtml(String(cell.f))+'"':'')+'>'+escapeHtml(val)+'</textarea></td>';
     }
     h += '</tr>';
   }
   h += '</tbody></table>';
   const grid = document.getElementById('sheetGrid'); grid.innerHTML = h;
+  grid.scrollTop = prevScroll;
+  grid.onscroll = ()=>{
+    const rr = edRange(ED.wb.Sheets[ED.sheet]);
+    if(ED.shown < rr.e.r+1 && grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 250){ ED.shown += ED_BATCH; edRenderGrid(); }
+  };
   grid.querySelectorAll('textarea').forEach(inp=>{
     inp.dataset.orig = inp.value;
     inp.addEventListener('focus', ()=>{ ED.sel = { r:Number(inp.dataset.r), c:Number(inp.dataset.c) }; edSelLabel(); });
@@ -885,7 +893,7 @@ function edRenderGrid(){
       if(inp.value === inp.dataset.orig) return;
       const prev = wsx[addr]; const nv = parseCellInput(inp.value, prev);
       if(nv===null) delete wsx[addr]; else wsx[addr] = nv;
-      inp.dataset.orig = inp.value; inp.parentElement.classList.add('ed'); ED.dirty = true;
+      inp.dataset.orig = inp.value; inp.parentElement.classList.add('ed'); (ED.editedSet=ED.editedSet||new Set()).add(addr); ED.dirty = true;
     });
   });
   grid.querySelectorAll('th.ch').forEach(t=>t.addEventListener('click', e=>{ if(e.target.classList.contains('col-rz')) return; ED.sel={ r:(ED.sel?ED.sel.r:0), c:Number(t.dataset.c) }; edSelLabel(); }));
@@ -908,7 +916,9 @@ function edRenderGrid(){
   }));
   edSelLabel();
   let note = 'Arrastrá el borde de una letra de columna o de un número de fila para agrandarla. Las celdas con fórmula (en gris) no se editan. Lo que cambies se marca en amarillo y se guarda con "Guardar cambios". Con Alt+Enter hacés un salto de línea dentro de la celda.';
-  if(r.e.r>=ED_MAX_ROWS || r.e.c>=ED_MAX_COLS) note += ' Se muestran las primeras '+ED_MAX_ROWS+' filas y '+ED_MAX_COLS+' columnas.';
+  note += ' Hoja de '+(r.e.r+1)+' filas y '+(r.e.c+1)+' columnas: ';
+  note += (ED.shown < r.e.r+1) ? 'se muestran las primeras '+ED.shown+' filas y se cargan más al bajar.' : 'se muestran todas.';
+  if(r.e.c>=ED_MAX_COLS) note += ' (Se ven las primeras '+ED_MAX_COLS+' columnas.)';
   document.getElementById('sheetNote').textContent = note + ' El formato visual (colores y bordes) puede simplificarse al guardar.';
 }
 // Inserta (+1) o elimina (-1) una fila o columna reajustando celdas, fórmulas, anchos, altos y combinadas
@@ -1011,7 +1021,7 @@ document.getElementById('sheetSave').addEventListener('click', async ()=>{
     ED.wb.Workbook = ED.wb.Workbook || {}; ED.wb.Workbook.CalcPr = { fullCalcOnLoad:true };
     const b64 = XLSX.write(ED.wb, {bookType, type:'base64'});
     const size = Math.floor(b64.length*3/4);
-    if(size>ATT_MAX){ showToast('El archivo supera los 3 MB y no se puede guardar.'); return; }
+    if(size>ATT_MAX){ showToast('El archivo supera los 10 MB y no se puede guardar.'); return; }
     showToast('Guardando…');
     await uploadAtt(ED.att, b64);
     ED.att.size = size; ED.att.modifiedAt = todayISO();
