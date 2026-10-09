@@ -340,7 +340,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 09/10/2026 · 14:12</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 09/10/2026 · 19:10</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -2392,6 +2392,13 @@ function getIndicatorLiveValue(storeId, indicator, sinceDate){
   const agg = aggEntries(entriesInRange(storeId, start, today));
   return indicatorFromAgg(indicator, agg);
 }
+function recalcInitialValue(storeId, p){
+  if(!p.initialFrom || !p.initialTo) return false;
+  const v = indicatorFromAgg(p.indicator, aggEntries(entriesInRange(storeId, p.initialFrom, p.initialTo)));
+  p.initialValue = v ? v.raw : null;
+  p.initialValueText = v ? v.text : null;
+  return !!v;
+}
 function planAutoStatus(storeId, p, upToDate){
   const today = todayISO();
   const end = (upToDate && upToDate<today) ? upToDate : today;
@@ -2611,7 +2618,8 @@ function renderPlanView(){
     const targetValue = targetText!=='' ? parseCellNum(targetText) : null;
     if(!description){ showToast('Escribí el plan de acción antes de crearlo'); return; }
     const initial = getIndicatorValueData(activeStoreId, indicator);
-    const plan = { id:uid(), indicator, description, targetDate, status:'en_curso', createdAt:startDate, followUps:[], blocks:pendingPlanBlocks,
+    ensureRange();
+    const plan = { id:uid(), initialFrom: rangeStart, initialTo: rangeEnd, indicator, description, targetDate, status:'en_curso', createdAt:startDate, followUps:[], blocks:pendingPlanBlocks,
       responsable, targetValue, targetText,
       initialValue: initial?initial.raw:null, initialValueText: initial?initial.text:null,
       closingValue: null, closingValueText: null, attachments: [] };
@@ -2713,6 +2721,7 @@ function renderPlanView(){
       else if(field==='createdAt' && !val){ val = plan.createdAt; }
       else if(field==='targetValue'){ plan.targetText = val.trim(); plan.targetValue = val.trim()==='' ? null : parseCellNum(val); await saveState(); render(); showToast('Actualizado'); return; }
       plan[field] = val;
+      if(field==='indicator') recalcInitialValue(activeStoreId, plan);
       await saveState(); render();
       showToast('Actualizado');
     });
@@ -2748,6 +2757,19 @@ function renderPlanView(){
   content.querySelectorAll('.follow-note').forEach(inp=>{
     inp.addEventListener('keydown', e=>{
       if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); const b=inp.closest('.followform').querySelector('.follow-add-btn'); if(b) b.click(); }
+    });
+  });
+  content.querySelectorAll('.init-recalc').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const plan = plans.find(p=>p.id===btn.dataset.plan);
+      if(!plan) return;
+      const box = btn.closest('.init-edit');
+      const from = box.querySelector('.init-from').value, to = box.querySelector('.init-to').value;
+      if(!from || !to || to<from){ showToast('Revisá las fechas del período'); return; }
+      plan.initialFrom = from; plan.initialTo = to;
+      const ok = recalcInitialValue(activeStoreId, plan);
+      await saveState(); render();
+      showToast(ok ? 'Valor inicial recalculado' : 'No hay ventas cargadas en ese período');
     });
   });
   content.querySelectorAll('.follow-read-btn').forEach(btn=>{
@@ -3140,6 +3162,19 @@ function renderPlanCard(p){
           ${hasClosing ? `<span style="color:${color};font-weight:700;">Valor al cerrar: ${escapeHtml(p.closingValueText)} ${arrow} ${closingVarPct!==null?`(${varStr(closingVarPct)})`:''}</span>` : ''}
         </div>${liveRow}`;
       })() : ''}
+
+      ${(function(){
+        const mk = (p.createdAt||todayISO()).slice(0,7);
+        const mb = monthBounds(mk);
+        const from = p.initialFrom || mb.start, to = p.initialTo || mb.end;
+        return `<div class="meta init-edit" data-plan="${p.id}" style="margin-top:-4px;align-items:center;gap:8px;">
+          <span>Período del valor inicial${p.initialFrom?'':' (no registrado — elegí uno)'}:</span>
+          <input type="date" class="init-from" value="${from}" style="border:1px solid var(--border);border-radius:4px;font-size:11.5px;padding:2px 4px;">
+          <span>a</span>
+          <input type="date" class="init-to" value="${to}" style="border:1px solid var(--border);border-radius:4px;font-size:11.5px;padding:2px 4px;">
+          <button class="btn init-recalc" type="button" data-plan="${p.id}" style="padding:3px 10px;font-size:11.5px;">Recalcular valor inicial</button>
+        </div>`;
+      })()}
 
       ${p.blocks.filter(b=>b.type==='texto'||b.type==='tabla').map(b=>renderBlockHtml(p,b)).join('')}
 
