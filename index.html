@@ -290,6 +290,13 @@
   .sheet-scroll td.ed input{background:var(--amber-soft)}
   .sheet-scroll td.fx input{background:#f1f1f1;color:var(--muted);cursor:not-allowed}
   .sheet-note{font-size:11.5px;color:var(--muted)}
+  .sheet-scroll.xe table{table-layout:fixed;border-collapse:collapse;background:#fff}
+  .sheet-scroll.xe td{border:1px solid #e2e2e2;padding:0;position:relative;cursor:cell;color:#000}
+  .sheet-scroll.xe .xv{padding:1px 4px;box-sizing:border-box;font-family:Calibri,Carlito,'Segoe UI',Arial,sans-serif;font-size:14.67px;line-height:1.25;color:inherit}
+  .sheet-scroll.xe td.sel{outline:2px solid var(--blue);outline-offset:-2px}
+  .sheet-scroll.xe td.ed{box-shadow:inset 0 0 0 2px #f2b800}
+  .sheet-scroll.xe td.fx{cursor:default}
+  .sheet-scroll.xe td textarea.xta{position:absolute;inset:0;width:100%;height:100%;min-height:24px;border:2px solid var(--blue);padding:1px 4px;resize:none;z-index:3;box-sizing:border-box;background:#fff;color:#000;outline:none}
   .rt-editor{min-height:170px;font-size:15px;line-height:1.6;padding:13px 15px;border:1px solid var(--border);border-radius:0 0 8px 8px;background:#fff;color:var(--ink);font-family:'Inter',sans-serif;outline:none;overflow-wrap:anywhere}
   .rt-editor:focus{border-color:var(--ink)}
   .rt-editor:empty:before{content:attr(data-placeholder);color:var(--muted)}
@@ -340,7 +347,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 09/10/2026 · 19:25</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 09/10/2026 · 20:10</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -850,6 +857,8 @@ function edSelLabel(){
   const rh=document.querySelector('#sheetGrid th.rn[data-r="'+ED.sel.r+'"]'); if(rh) rh.classList.add('rsel');
 }
 function edRenderGrid(){
+  if(ED.x){ xeRender(); return; }
+  document.getElementById('sheetGrid').classList.remove('xe');
   const ws = ED.wb.Sheets[ED.sheet]; const r = edRange(ws);
   if(!ED.shown) ED.shown = ED_BATCH;
   if(ED.sel && ED.sel.r+1>ED.shown) ED.shown = ED.sel.r+1;
@@ -967,6 +976,7 @@ function edShift(axis, at, delta){
 }
 function edTool(act){
   if(!ED) return;
+  if(ED.x){ xeTool(act); return; }
   const ws = ED.wb.Sheets[ED.sheet]; const r = edRange(ws);
   const sel = ED.sel || {r:0,c:0};
   if(act==='row-end'){ r.e.r++; ws['!ref']=XLSX.utils.encode_range(r); ED.dirty=true; ED.sel={r:r.e.r,c:sel.c}; }
@@ -990,15 +1000,302 @@ function edTool(act){
 document.querySelectorAll('.sheet-tools [data-sh]').forEach(b=>b.addEventListener('click',()=>edTool(b.dataset.sh)));
 function edRenderTabs(){
   const t = document.getElementById('sheetTabs');
+  if(ED.x){
+    t.innerHTML = ED.wb.worksheets.map(w=>'<button type="button" class="'+(w.name===ED.sheet?'on':'')+'" data-sheet="'+escapeHtml(w.name)+'">'+escapeHtml(w.name)+'</button>').join('');
+    t.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ xeCommit(); ED.sheet=b.dataset.sheet; ED.ws=ED.wb.getWorksheet(ED.sheet); ED.shown=0; ED.sel=null; ED.nRows=0; ED.nCols=0; edRenderTabs(); edRenderGrid(); }));
+    return;
+  }
   t.innerHTML = ED.wb.SheetNames.map(n=>'<button type="button" class="'+(n===ED.sheet?'on':'')+'" data-sheet="'+escapeHtml(n)+'">'+escapeHtml(n)+'</button>').join('');
   t.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ ED.sheet=b.dataset.sheet; edRenderTabs(); edRenderGrid(); }));
 }
+// ---- Motor que conserva el formato original (ExcelJS) para .xlsx ----
+let xlPromise = null;
+function xlLoad(){
+  if(typeof ExcelJS!=='undefined') return Promise.resolve(true);
+  if(xlPromise) return xlPromise;
+  const urls = ['https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js','https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'];
+  xlPromise = (async()=>{
+    for(const u of urls){
+      const ok = await new Promise(res=>{ const sc=document.createElement('script'); sc.src=u; sc.onload=()=>res(typeof ExcelJS!=='undefined'); sc.onerror=()=>res(false); document.head.appendChild(sc); });
+      if(ok) return true;
+    }
+    xlPromise = null; return false;
+  })();
+  return xlPromise;
+}
+const XL_THEME = ['FFFFFF','000000','E7E6E6','44546A','4472C4','ED7D31','A5A5A5','FFC000','5B9BD5','70AD47'];
+const XL_IDX = ['000000','FFFFFF','FF0000','00FF00','0000FF','FFFF00','FF00FF','00FFFF','000000','FFFFFF','FF0000','00FF00','0000FF','FFFF00','FF00FF','00FFFF','800000','008000','000080','808000','800080','008080','C0C0C0','808080','9999FF','993366','FFFFCC','CCFFFF','660066','FF8080','0066CC','CCCCFF','000080','FF00FF','FFFF00','00FFFF','800080','800000','008080','0000FF','00CCFF','CCFFFF','CCFFCC','FFFF99','99CCFF','FF99CC','CC99FF','FFCC99','3366FF','33CCCC','99CC00','FFCC00','FF9900','FF6600','666699','969696','003366','339966','003300','333300','993300','993366','333399','333333'];
+function xlTint(hex, tint){
+  if(!tint) return hex;
+  let r=parseInt(hex.slice(0,2),16), g=parseInt(hex.slice(2,4),16), b=parseInt(hex.slice(4,6),16);
+  const f = v => Math.round(tint<0 ? v*(1+tint) : v+(255-v)*tint);
+  const h = v => ('0'+Math.max(0,Math.min(255,f(v))).toString(16)).slice(-2);
+  return h(r)+h(g)+h(b);
+}
+function xlColor(c){
+  if(!c) return null;
+  if(c.argb) return '#'+String(c.argb).slice(-6);
+  if(c.theme!==undefined && XL_THEME[c.theme]) return '#'+xlTint(XL_THEME[c.theme], c.tint||0);
+  if(c.indexed!==undefined && XL_IDX[c.indexed]) return '#'+XL_IDX[c.indexed];
+  return null;
+}
+const XL_BORDER = { thin:'1px solid', medium:'2px solid', thick:'3px solid', dashed:'1px dashed', dotted:'1px dotted', hair:'1px dotted', double:'3px double', mediumDashed:'2px dashed', dashDot:'1px dashed', mediumDashDot:'2px dashed', dashDotDot:'1px dashed', mediumDashDotDot:'2px dashed', slantDashDot:'1px dashed' };
+function xlRaw(cell){
+  if(!cell) return { v:null, fx:false };
+  const v = cell.value;
+  if(v===null || v===undefined) return { v:null, fx:false };
+  if(typeof v==='object' && !(v instanceof Date)){
+    if(v.formula!==undefined || v.sharedFormula!==undefined){ const r=v.result; return { v:(r===undefined?null:r), fx:true, f:(v.formula||v.sharedFormula||'') }; }
+    if(v.richText) return { v:v.richText.map(t=>t.text).join(''), fx:false };
+    if(v.error) return { v:v.error, fx:false };
+    if(v.text!==undefined) return { v:String(v.text), fx:false };
+    return { v:JSON.stringify(v), fx:false };
+  }
+  return { v, fx:false };
+}
+function xlSerial(d){ return (d.getTime()-Date.UTC(1899,11,30))/86400000; }
+function xlText(val, numFmt){
+  if(val===null || val===undefined) return '';
+  try{
+    if(val instanceof Date) return XLSX.SSF.format(numFmt && numFmt!=='General' ? numFmt : 'dd/mm/yyyy', xlSerial(val));
+    if(typeof val==='number') return (numFmt && numFmt!=='General') ? XLSX.SSF.format(numFmt, val) : String(Math.round(val*1e10)/1e10);
+  }catch(e){}
+  if(typeof val==='object') return val.error ? String(val.error) : String(val);
+  if(typeof val==='boolean') return val ? 'VERDADERO' : 'FALSO';
+  return String(val);
+}
+function xlCellStyle(cell, raw){
+  const td = [], dv = [];
+  if(cell){
+    const fl = cell.fill;
+    if(fl && fl.type==='pattern' && fl.pattern==='solid'){ const c=xlColor(fl.fgColor); if(c) td.push('background:'+c); }
+    const b = cell.border || {};
+    [['top','border-top'],['bottom','border-bottom'],['left','border-left'],['right','border-right']].forEach(([k,css])=>{
+      const bb=b[k]; if(bb && bb.style && XL_BORDER[bb.style]) td.push(css+':'+XL_BORDER[bb.style]+' '+(xlColor(bb.color)||'#000'));
+    });
+    const fo = cell.font || {};
+    if(fo.bold) dv.push('font-weight:700');
+    if(fo.italic) dv.push('font-style:italic');
+    const deco = [fo.underline?'underline':'', fo.strike?'line-through':''].filter(Boolean).join(' ');
+    if(deco) dv.push('text-decoration:'+deco);
+    const fc = xlColor(fo.color); if(fc) dv.push('color:'+fc);
+    if(fo.size) dv.push('font-size:'+(Math.round(fo.size*4/3*10)/10)+'px');
+    if(fo.name) dv.push("font-family:'"+String(fo.name).replace(/['"]/g,'')+"',Calibri,Carlito,'Segoe UI',Arial,sans-serif");
+    const al = cell.alignment || {};
+    let h = al.horizontal;
+    if(!h || h==='general') h = (typeof raw==='number' || raw instanceof Date) ? 'right' : (typeof raw==='boolean' ? 'center' : 'left');
+    if(h==='centerContinuous') h='center'; if(h==='fill'||h==='justify'||h==='distributed') h='left';
+    dv.push('text-align:'+h);
+    td.push('vertical-align:'+(al.vertical==='top'?'top':(al.vertical==='middle'||al.vertical==='center')?'middle':'bottom'));
+    if(al.indent) dv.push('padding-left:'+(4+al.indent*8)+'px');
+    dv.push(al.wrapText ? 'white-space:pre-wrap;word-break:break-word' : 'white-space:pre;text-overflow:clip');
+    if(al.textRotation===90||al.textRotation===255) {}
+  } else {
+    td.push('vertical-align:bottom'); dv.push('white-space:pre');
+  }
+  return { td:td.join(';'), dv:dv.join(';') };
+}
+function xeDims(){
+  const ws = ED.ws;
+  const nR = Math.max(ws.rowCount||0, ED.nRows||0, 1);
+  const nC = Math.min(Math.max(ws.columnCount||0, ED.nCols||0, 1), 200);
+  return { nR, nC };
+}
+function xeColPx(ws, c){ const col = ws.getColumn(c+1); const w = col.width || (ws.properties && ws.properties.defaultColWidth) || 8.43; return Math.max(24, Math.round(w*7+5)); }
+function xeRowInfo(ws, r){ const row = ws.findRow(r+1); const h = row && row.height; if(h) return { px:Math.max(14,Math.round(h*4/3)), fixed:true, hidden:!!row.hidden }; return { px:Math.round(((ws.properties&&ws.properties.defaultRowHeight)||15)*4/3), fixed:false, hidden:!!(row&&row.hidden) }; }
+function xeCellInner(r, c){
+  const ws = ED.ws; const cell = ws.findCell(r+1,c+1);
+  const rw = xlRaw(cell);
+  const txt = xlText(rw.v, cell && cell.numFmt);
+  const st = xlCellStyle(cell, rw.v);
+  return { txt, st, fx:rw.fx, f:rw.f };
+}
+function xeRender(){
+  const ws = ED.ws; const { nR, nC } = xeDims();
+  if(!ED.shown) ED.shown = ED_BATCH;
+  if(ED.sel && ED.sel.r+1>ED.shown) ED.shown = ED.sel.r+1;
+  const rows = Math.min(nR, ED.shown);
+  const grid = document.getElementById('sheetGrid'); const prevScroll = grid.scrollTop;
+  grid.classList.add('xe');
+  const mm = {}, cov = {};
+  (ws.model.merges||[]).forEach(a=>{
+    try{
+      const rg = XLSX.utils.decode_range(a);
+      mm[rg.s.r+','+rg.s.c] = { rs:rg.e.r-rg.s.r+1, cs:rg.e.c-rg.s.c+1 };
+      for(let rr=rg.s.r; rr<=Math.min(rg.e.r, rows); rr++) for(let cc=rg.s.c; cc<=Math.min(rg.e.c,nC); cc++){ if(rr!==rg.s.r || cc!==rg.s.c) cov[rr+','+cc]=1; }
+    }catch(e){}
+  });
+  const colHidden = []; for(let c=0;c<nC;c++) colHidden[c] = !!ws.getColumn(c+1).hidden;
+  let h = '<table><colgroup><col style="width:42px">';
+  for(let c=0;c<nC;c++) h += '<col data-c="'+c+'" style="width:'+(colHidden[c]?0:xeColPx(ws,c))+'px">';
+  h += '</colgroup><thead><tr><th class="rn"></th>';
+  for(let c=0;c<nC;c++) h += '<th class="ch" data-c="'+c+'"'+(colHidden[c]?' style="display:none"':'')+'>'+XLSX.utils.encode_col(c)+'<span class="col-rz" data-c="'+c+'"></span></th>';
+  h += '</tr></thead><tbody>';
+  for(let r=0;r<rows;r++){
+    const ri = xeRowInfo(ws, r);
+    h += '<tr data-r="'+r+'" style="height:'+ri.px+'px'+(ri.hidden?';display:none':'')+'"><th class="rn" data-r="'+r+'">'+(r+1)+'<span class="row-rz" data-r="'+r+'"></span></th>';
+    for(let c=0;c<nC;c++){
+      if(cov[r+','+c]) continue;
+      const m = mm[r+','+c];
+      const it = xeCellInner(r,c);
+      const edc = (ED.editedSet && ED.editedSet.has(r+','+c)) ? ' ed' : '';
+      const sel = (ED.sel && ED.sel.r===r && ED.sel.c===c) ? ' sel' : '';
+      const maxH = ri.fixed ? 'max-height:'+(ri.px-1)+'px;overflow:hidden;' : '';
+      h += '<td data-r="'+r+'" data-c="'+c+'" class="'+(it.fx?'fx':'')+edc+sel+'"'+(m?' rowspan="'+m.rs+'" colspan="'+m.cs+'"':'')+' style="'+it.st.td+(colHidden[c]?';display:none':'')+'"'+(it.fx?' title="Fórmula: ='+escapeHtml(String(it.f))+'"':'')+'><div class="xv" style="'+maxH+it.st.dv+'">'+escapeHtml(it.txt)+'</div></td>';
+    }
+    h += '</tr>';
+  }
+  h += '</tbody></table>';
+  grid.innerHTML = h; grid.scrollTop = prevScroll;
+  grid.onscroll = ()=>{
+    if(ED && ED.x && ED.shown < xeDims().nR && grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 250){ ED.shown += ED_BATCH; xeRender(); }
+  };
+  grid.querySelectorAll('td[data-r]').forEach(td=>td.addEventListener('click', ()=>xeSelectOrEdit(td)));
+  grid.querySelectorAll('th.ch').forEach(t=>t.addEventListener('click', e=>{ if(e.target.classList.contains('col-rz')) return; xeCommit(); ED.sel={ r:(ED.sel?ED.sel.r:0), c:Number(t.dataset.c) }; edSelLabel(); }));
+  grid.querySelectorAll('th.rn[data-r]').forEach(t=>t.addEventListener('click', e=>{ if(e.target.classList.contains('row-rz')) return; xeCommit(); ED.sel={ r:Number(t.dataset.r), c:(ED.sel?ED.sel.c:0) }; edSelLabel(); }));
+  grid.querySelectorAll('.col-rz').forEach(hd=>hd.addEventListener('mousedown', e=>{
+    e.preventDefault(); e.stopPropagation();
+    const c = Number(hd.dataset.c); const col = grid.querySelector('col[data-c="'+c+'"]'); const startX = e.clientX; const startW = xeColPx(ws,c);
+    const mv = ev=>{ col.style.width = Math.max(24,startW+ev.clientX-startX)+'px'; };
+    const up = ev=>{ document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up); const w=Math.max(24,startW+ev.clientX-startX); ws.getColumn(c+1).width = (w-5)/7; ED.dirty=true; };
+    document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up);
+  }));
+  grid.querySelectorAll('.row-rz').forEach(hd=>hd.addEventListener('mousedown', e=>{
+    e.preventDefault(); e.stopPropagation();
+    const i = Number(hd.dataset.r); const tr = grid.querySelector('tr[data-r="'+i+'"]'); const startY = e.clientY; const startH = xeRowInfo(ws,i).px;
+    const mv = ev=>{ tr.style.height = Math.max(14,startH+ev.clientY-startY)+'px'; };
+    const up = ev=>{ document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up); const hh=Math.max(14,startH+ev.clientY-startY); ws.getRow(i+1).height = hh*0.75; ED.dirty=true; xeRender(); };
+    document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up);
+  }));
+  edSelLabel();
+  document.getElementById('sheetNote').textContent = 'Se muestra con el formato original del archivo. Tocá una celda para editarla (Enter confirma, Alt+Enter hace un salto de línea, Esc cancela). Las celdas con fórmula no se editan: se calculan al abrir el archivo en Excel. Hoja de '+nR+' filas y '+nC+' columnas'+(ED.shown<nR?': se muestran las primeras '+ED.shown+' filas y se cargan más al bajar.':'.')+' Lo que cambies se marca con borde amarillo y se guarda con "Guardar cambios". Gráficos y formatos muy especiales pueden no conservarse.';
+}
+function xeParse(txt, cell){
+  const t = txt.trim();
+  if(t==='') return null;
+  const nf = (cell && cell.numFmt) || '';
+  const isDate = (cell && cell.value instanceof Date) || (/[dmy]/i.test(nf.replace(/\[[^\]]*\]|"[^"]*"/g,'')) && !/[#0]/.test(nf));
+  if(isDate){
+    const m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/.exec(t);
+    if(m){ let y=+m[3]; if(y<100) y+=2000; return new Date(Date.UTC(y,+m[2]-1,+m[1])); }
+  }
+  if(nf.includes('%')){
+    const p = /^(-?[\d.,]+)\s*%?$/.exec(t.replace(/\s/g,''));
+    if(p){ const n = Number(p[1].replace(/\./g,'').replace(',','.')); if(isFinite(n)) return n/100; }
+  }
+  const nv = parseCellInput(t, null);
+  if(nv===null) return null;
+  return nv.t==='n' ? nv.v : nv.v;
+}
+function xeSelectOrEdit(td){
+  if(ED.editing && ED.editing.td===td) return;
+  xeCommit();
+  const r = Number(td.dataset.r), c = Number(td.dataset.c);
+  ED.sel = { r, c };
+  document.querySelectorAll('#sheetGrid td.sel').forEach(x=>x.classList.remove('sel'));
+  td.classList.add('sel'); edSelLabel();
+  if(td.classList.contains('fx')) return;
+  const cell = ED.ws.findCell(r+1,c+1);
+  const rw = xlRaw(cell);
+  let val = '';
+  if(rw.v instanceof Date) val = xlText(rw.v,'dd/mm/yyyy'); else if(rw.v!==null && rw.v!==undefined) val = String(rw.v);
+  const ta = document.createElement('textarea'); ta.className = 'xta'; ta.value = val;
+  const dv = td.querySelector('.xv'); if(dv){ const cs = getComputedStyle(dv); ta.style.font = cs.font; ta.style.textAlign = cs.textAlign; }
+  td.appendChild(ta); ta.focus(); ta.select();
+  ED.editing = { td, r, c, ta, orig:val, done:false };
+  ta.addEventListener('keydown', e=>{
+    if(e.key==='Enter'){
+      if(e.altKey){ e.preventDefault(); const st=ta.selectionStart; ta.value=ta.value.slice(0,st)+'\n'+ta.value.slice(ta.selectionEnd); ta.selectionStart=ta.selectionEnd=st+1; return; }
+      e.preventDefault(); xeCommit(); xeGo(r+1,c);
+    } else if(e.key==='Tab'){ e.preventDefault(); xeCommit(); xeGo(r, c+(e.shiftKey?-1:1)); }
+    else if(e.key==='Escape'){ e.preventDefault(); const ed=ED.editing; ed.done=true; ED.editing=null; ta.remove(); }
+  });
+  ta.addEventListener('blur', ()=>{ setTimeout(()=>{ if(ED && ED.editing && ED.editing.ta===ta) xeCommit(); }, 0); });
+}
+function xeGo(r,c){
+  if(r<0||c<0) return;
+  const { nR, nC } = xeDims();
+  if(r>=nR || c>=nC) return;
+  if(r>=ED.shown){ ED.shown = r+1; xeRender(); }
+  const td = document.querySelector('#sheetGrid td[data-r="'+r+'"][data-c="'+c+'"]');
+  if(td){ td.scrollIntoView({block:'nearest',inline:'nearest'}); xeSelectOrEdit(td); }
+}
+function xeCommit(){
+  const ed = ED && ED.editing; if(!ed || ed.done) return;
+  ed.done = true; ED.editing = null;
+  const { td, r, c, ta, orig } = ed; const v = ta.value; ta.remove();
+  if(v===orig) return;
+  const cell = ED.ws.getCell(r+1,c+1);
+  cell.value = xeParse(v, cell);
+  (ED.editedSet = ED.editedSet || new Set()).add(r+','+c);
+  ED.dirty = true;
+  const it = xeCellInner(r,c);
+  td.classList.add('ed'); td.setAttribute('style', it.st.td + (td.style.display==='none'?';display:none':''));
+  const dv = td.querySelector('.xv'); if(dv){ dv.textContent = it.txt; }
+}
+function xeShift(axis, at0, delta){
+  const ws = ED.ws;
+  const merges = (ws.model.merges||[]).slice();
+  merges.forEach(a=>{ try{ ws.unMergeCells(a); }catch(e){} });
+  if(axis==='r'){
+    const n = Math.max(ws.rowCount,1); const hs=[]; for(let i=1;i<=n;i++){ const rw=ws.findRow(i); hs[i] = rw ? rw.height : undefined; }
+    if(delta>0){ ws.spliceRows(at0+1,0,[]); hs.splice(at0+1,0,undefined); } else { ws.spliceRows(at0+1,1); hs.splice(at0+1,1); }
+    for(let i=1;i<hs.length;i++){ ws.getRow(i).height = hs[i]; }
+    ED.nRows = Math.max((ED.nRows||0)+delta, 1);
+  } else {
+    const n = Math.max(ws.columnCount,1); const wd=[]; for(let i=1;i<=n;i++){ wd[i] = ws.getColumn(i).width; }
+    if(delta>0){ ws.spliceColumns(at0+1,0,[]); wd.splice(at0+1,0,undefined); } else { ws.spliceColumns(at0+1,1); wd.splice(at0+1,1); }
+    for(let i=1;i<wd.length;i++){ ws.getColumn(i).width = wd[i]; }
+    ED.nCols = Math.max((ED.nCols||0)+delta, 1);
+  }
+  ws.eachRow({includeEmpty:false}, row=>row.eachCell({includeEmpty:false}, cell=>{
+    const v = cell.value;
+    if(v && typeof v==='object' && typeof v.formula==='string') cell.value = { formula: edShiftRefs(v.formula, axis, at0, delta), result: v.result };
+  }));
+  merges.forEach(a=>{
+    try{
+      const rg = XLSX.utils.decode_range(a); const k = axis==='r' ? 'r' : 'c'; const s2={...rg.s}, e2={...rg.e};
+      if(delta>0){ if(s2[k]>=at0) s2[k]++; if(e2[k]>=at0) e2[k]++; }
+      else { if(s2[k]>at0) s2[k]--; if(e2[k]>=at0) e2[k]--; if(e2[k]<s2[k]) return; }
+      if(s2.r===e2.r && s2.c===e2.c) return;
+      ws.mergeCells(XLSX.utils.encode_range({s:s2,e:e2}));
+    }catch(e){}
+  });
+  ED.editedSet = new Set(); ED.dirty = true;
+}
+function xeTool(act){
+  xeCommit();
+  const ws = ED.ws; const { nR, nC } = xeDims();
+  const sel = ED.sel || {r:0,c:0};
+  if(act==='row-end'){ ED.nRows = nR+1; ws.getRow(nR+1); ED.dirty=true; ED.shown = Math.max(ED.shown||0, nR+1); ED.sel={r:nR,c:sel.c}; }
+  else if(act==='col-end'){ ED.nCols = nC+1; ws.getCell(1,nC+1); ED.dirty=true; ED.sel={r:sel.r,c:nC}; }
+  else if(act==='row-above'){ xeShift('r', sel.r, +1); }
+  else if(act==='row-below'){ xeShift('r', sel.r+1, +1); ED.sel={r:sel.r+1,c:sel.c}; }
+  else if(act==='col-left'){ xeShift('c', sel.c, +1); }
+  else if(act==='col-right'){ xeShift('c', sel.c+1, +1); ED.sel={r:sel.r,c:sel.c+1}; }
+  else if(act==='row-del'){ if(nR<=1){ showToast('La planilla necesita al menos una fila.'); return; } xeShift('r', sel.r, -1); ED.sel={r:Math.min(sel.r,nR-2),c:sel.c}; }
+  else if(act==='col-del'){ if(nC<=1){ showToast('La planilla necesita al menos una columna.'); return; } xeShift('c', sel.c, -1); ED.sel={r:sel.r,c:Math.min(sel.c,nC-2)}; }
+  xeRender();
+}
+
 async function openSheetEditor(plan, att){
   if(typeof XLSX==='undefined'){ showToast('No se pudo cargar el editor de planillas. Revisá tu conexión.'); return; }
   if(!DB){ showToast('Necesitás conexión con los datos compartidos.'); return; }
   showToast('Abriendo archivo…');
   try{
     const b64 = await fetchAttB64(att);
+    if(attExt(att.name)==='xlsx' && await xlLoad()){
+      try{
+        const bin = atob(b64); const u8 = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+        const xwb = new ExcelJS.Workbook(); await xwb.xlsx.load(u8.buffer);
+        ED = { x:true, plan, att, wb:xwb, sheet:xwb.worksheets[0].name, ws:xwb.worksheets[0], dirty:false };
+        document.getElementById('sheetTitle').textContent = att.name;
+        document.getElementById('sheetSub').textContent = 'Plan: ' + (plan.indicator||'') + ' · ' + fmtSize(att.size||0);
+        edRenderTabs(); edRenderGrid();
+        document.getElementById('sheetEditor').classList.add('show');
+        return;
+      }catch(e){ console.error('ExcelJS falló, uso el editor simple', e); }
+    }
     const wb = XLSX.read(b64, {type:'base64', cellFormula:true, cellStyles:true, cellDates:false});
     ED = { plan, att, wb, sheet: wb.SheetNames[0], dirty:false };
     document.getElementById('sheetTitle').textContent = att.name;
@@ -1015,6 +1312,22 @@ function closeSheetEditor(force){
 document.getElementById('sheetClose').addEventListener('click', ()=>closeSheetEditor(false));
 document.getElementById('sheetSave').addEventListener('click', async ()=>{
   if(!ED) return;
+  if(ED.x){
+    try{
+      xeCommit();
+      ED.wb.calcProperties = Object.assign({}, ED.wb.calcProperties||{}, { fullCalcOnLoad:true });
+      const buf = await ED.wb.xlsx.writeBuffer();
+      const b64 = bufToB64(buf); const size = Math.floor(b64.length*3/4);
+      if(size>ATT_MAX){ showToast('El archivo supera los 10 MB y no se puede guardar.'); return; }
+      showToast('Guardando…');
+      await uploadAtt(ED.att, b64);
+      ED.att.size = size; ED.att.modifiedAt = todayISO();
+      await saveState(); ED.dirty=false; render();
+      document.getElementById('sheetSub').textContent = 'Plan: ' + (ED.plan.indicator||'') + ' · ' + fmtSize(size);
+      showToast('Cambios guardados');
+    }catch(e){ console.error(e); showToast('No se pudo guardar el archivo.'); }
+    return;
+  }
   const ext = attExt(ED.att.name);
   const bookType = ext==='csv' ? 'csv' : ext==='xls' ? 'biff8' : (ext==='xlsm' ? 'xlsm' : 'xlsx');
   try{
@@ -2403,8 +2716,20 @@ function getIndicatorLiveValue(storeId, indicator, sinceDate){
   return indicatorFromAgg(indicator, agg);
 }
 function recalcInitialValue(storeId, p){
-  if(!p.initialFrom || !p.initialTo) return false;
-  const v = indicatorFromAgg(p.indicator, aggEntries(entriesInRange(storeId, p.initialFrom, p.initialTo)));
+  // Valor al iniciar = lo vendido en el mismo mes ANTES de la fecha "Desde" (si empieza el día 1, el mes anterior completo)
+  if(!p.createdAt) return false;
+  const iso = d=>d.toISOString().slice(0,10);
+  const start = new Date(p.createdAt+'T00:00:00Z');
+  let from, to;
+  if(start.getUTCDate()>1){
+    from = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+    to = new Date(start.getTime()-86400000);
+  } else {
+    from = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth()-1, 1));
+    to = new Date(start.getTime()-86400000);
+  }
+  const v = indicatorFromAgg(p.indicator, aggEntries(entriesInRange(storeId, iso(from), iso(to))));
+  p.initialFrom = null; p.initialTo = null;
   p.initialValue = v ? v.raw : null;
   p.initialValueText = v ? v.text : null;
   return !!v;
@@ -2628,11 +2953,11 @@ function renderPlanView(){
     const targetValue = targetText!=='' ? parseCellNum(targetText) : null;
     if(!description){ showToast('Escribí el plan de acción antes de crearlo'); return; }
     const initial = getIndicatorValueData(activeStoreId, indicator);
-    ensureRange();
-    const plan = { id:uid(), initialFrom: rangeStart, initialTo: rangeEnd, indicator, description, targetDate, status:'en_curso', createdAt:startDate, followUps:[], blocks:pendingPlanBlocks,
+    const plan = { id:uid(), indicator, description, targetDate, status:'en_curso', createdAt:startDate, followUps:[], blocks:pendingPlanBlocks,
       responsable, targetValue, targetText,
-      initialValue: initial?initial.raw:null, initialValueText: initial?initial.text:null,
+      initialValue: null, initialValueText: null,
       closingValue: null, closingValueText: null, attachments: [] };
+    recalcInitialValue(activeStoreId, plan);
     if(pendingPlanAttachments.length){
       if(!DB){ showToast('Los archivos adjuntos necesitan la conexión con los datos compartidos.'); return; }
       showToast('Subiendo archivos…');
@@ -2731,7 +3056,7 @@ function renderPlanView(){
       else if(field==='createdAt' && !val){ val = plan.createdAt; }
       else if(field==='targetValue'){ plan.targetText = val.trim(); plan.targetValue = val.trim()==='' ? null : parseCellNum(val); await saveState(); render(); showToast('Actualizado'); return; }
       plan[field] = val;
-      if(field==='indicator') recalcInitialValue(activeStoreId, plan);
+      if(field==='indicator' || field==='createdAt') recalcInitialValue(activeStoreId, plan);
       await saveState(); render();
       showToast('Actualizado');
     });
@@ -2767,19 +3092,6 @@ function renderPlanView(){
   content.querySelectorAll('.follow-note').forEach(inp=>{
     inp.addEventListener('keydown', e=>{
       if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); const b=inp.closest('.followform').querySelector('.follow-add-btn'); if(b) b.click(); }
-    });
-  });
-  content.querySelectorAll('.init-recalc').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      const plan = plans.find(p=>p.id===btn.dataset.plan);
-      if(!plan) return;
-      const box = btn.closest('.init-edit');
-      const from = box.querySelector('.init-from').value, to = box.querySelector('.init-to').value;
-      if(!from || !to || to<from){ showToast('Revisá las fechas del período'); return; }
-      plan.initialFrom = from; plan.initialTo = to;
-      const ok = recalcInitialValue(activeStoreId, plan);
-      await saveState(); render();
-      showToast(ok ? 'Valor inicial recalculado' : 'No hay ventas cargadas en ese período');
     });
   });
   content.querySelectorAll('.follow-read-btn').forEach(btn=>{
@@ -3172,19 +3484,6 @@ function renderPlanCard(p){
           ${hasClosing ? `<span style="color:${color};font-weight:700;">Valor al cerrar: ${escapeHtml(p.closingValueText)} ${arrow} ${closingVarPct!==null?`(${varStr(closingVarPct)})`:''}</span>` : ''}
         </div>${liveRow}`;
       })() : ''}
-
-      ${(function(){
-        const mk = (p.createdAt||todayISO()).slice(0,7);
-        const mb = monthBounds(mk);
-        const from = p.initialFrom || mb.start, to = p.initialTo || mb.end;
-        return `<div class="meta init-edit" data-plan="${p.id}" style="margin-top:-4px;align-items:center;gap:8px;">
-          <span>Período del valor inicial${p.initialFrom?'':' (no registrado — elegí uno)'}:</span>
-          <input type="date" class="init-from" value="${from}" style="border:1px solid var(--border);border-radius:4px;font-size:11.5px;padding:2px 4px;">
-          <span>a</span>
-          <input type="date" class="init-to" value="${to}" style="border:1px solid var(--border);border-radius:4px;font-size:11.5px;padding:2px 4px;">
-          <button class="btn init-recalc" type="button" data-plan="${p.id}" style="padding:3px 10px;font-size:11.5px;">Recalcular valor inicial</button>
-        </div>`;
-      })()}
 
       ${p.blocks.filter(b=>b.type==='texto'||b.type==='tabla').map(b=>renderBlockHtml(p,b)).join('')}
 
