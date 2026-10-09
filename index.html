@@ -349,7 +349,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 09/10/2026 · 20:25</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 09/10/2026 · 21:00</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -1864,7 +1864,7 @@ function renderViewTabs(){
   el.innerHTML = `
     <button class="tabbtn ${activeView==='daily'?'active':''}" data-view="daily">Vista diaria</button>
     <button class="tabbtn ${activeView==='monthly'?'active':''}" data-view="monthly">Vista mensual</button>
-    <button class="tabbtn ${activeView==='plan'?'active':''}" data-view="plan">Plan de acción${enCursoCount?` (${enCursoCount})`:''}${unreadNotes(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">🔔 Nota de seguimiento activa</span>`:''}</button>
+    <button class="tabbtn ${activeView==='plan'?'active':''}" data-view="plan">Plan de acción${enCursoCount?` (${enCursoCount})`:''}${noFollowUpPlans(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">⚠ Sin seguimiento</span>`:''}${unreadNotes(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">🔔 Nota de seguimiento activa</span>`:''}</button>
   `;
   el.querySelectorAll('.tabbtn').forEach(b=>b.onclick=()=>{ activeView=b.dataset.view; render(); });
 }
@@ -1873,6 +1873,26 @@ function unreadNotes(storeId){
   const out=[];
   (state.plans[storeId]||[]).forEach(p=>(p.followUps||[]).forEach(f=>{ if(f.nueva && (f.note||'').trim()) out.push({plan:p, fu:f}); }));
   return out.sort((a,b)=>b.fu.date.localeCompare(a.fu.date));
+}
+function noFollowUpPlans(storeId){
+  const out=[]; const today=todayISO();
+  (state.plans[storeId]||[]).forEach(p=>{
+    if(p.status!=='en_curso') return;
+    const last = (p.followUps && p.followUps.length) ? p.followUps.slice().sort((a,b)=>a.date.localeCompare(b.date)).slice(-1)[0].date : p.createdAt;
+    const d = daysBetweenInclusive(last, today) - 1;
+    if(d>=3) out.push({plan:p, days:d});
+  });
+  return out;
+}
+function noFollowAlertHtml(storeId, n){
+  return `<div class="alert warn note-alert">
+    <span class="dot"></span>
+    <div class="body">
+      <div class="title">Sin seguimiento hace ${n.days} día(s)</div>
+      <div class="detail">Plan «${escapeHtml(n.plan.indicator||'')}»: ${escapeHtml(n.plan.description||'')}</div>
+    </div>
+    <button class="mkplan note-go" type="button" data-store="${storeId}" data-plan="${n.plan.id}">Ver plan</button>
+  </div>`;
 }
 function noteAlertHtml(storeId, n, showStore){
   const st = state.stores.find(x=>x.id===storeId);
@@ -1908,7 +1928,7 @@ function attachNoteHandlers(root){
 function alertsPanelHtml(storeId){
   const alerts = computeAlerts(storeId);
   const notes = unreadNotes(storeId);
-  const notesHtml = notes.map(n=>noteAlertHtml(storeId,n,false)).join('');
+  const notesHtml = noFollowUpPlans(storeId).map(n=>noFollowAlertHtml(storeId,n)).join('') + notes.map(n=>noteAlertHtml(storeId,n,false)).join('');
   let inner;
   if(!alerts.length){
     inner = notesHtml + `<div class="allgood">✓ Sin alertas activas en el período seleccionado.</div>`;
@@ -2698,6 +2718,7 @@ function autoCloseOverduePlans(){
 }
 function indicatorFromAgg(indicator, agg){
   const s = (indicator||'').toLowerCase();
+  if(s.includes('unid')) return agg.articulos>0 ? {raw:agg.articulos, text:Math.round(agg.articulos).toLocaleString('es-AR')+' u.'} : null;
   if(s.includes('tk') || s.includes('ticket promedio')) return agg.tkProm>0 ? {raw:agg.tkProm, text:fmtMoney(agg.tkProm)} : null;
   if(s.includes('art x') || s.includes('articulo')) return agg.tickets>0 ? {raw:agg.artXTk, text:fmtNum(agg.artXTk)+' u/tk'} : null;
   if(s.includes('tráfico') || s.includes('trafico') || s.includes('ticket')) return agg.tickets ? {raw:agg.tickets, text:agg.tickets+' tickets'} : null;
@@ -2706,6 +2727,7 @@ function indicatorFromAgg(indicator, agg){
 function formatIndicatorValue(indicator, raw){
   if(raw===null||raw===undefined||raw==='') return '';
   const s = (indicator||'').toLowerCase();
+  if(s.includes('unid')) return Math.round(raw).toLocaleString('es-AR')+' u.';
   if(s.includes('tk') || s.includes('ticket promedio')) return fmtMoney(raw);
   if(s.includes('art x') || s.includes('articulo')) return fmtNum(raw)+' u/tk';
   if(s.includes('tráfico') || s.includes('trafico') || s.includes('ticket')) return Math.round(raw)+' tickets';
@@ -2740,6 +2762,73 @@ function recalcInitialValue(storeId, p){
   p.initialValue = v ? v.raw : null;
   p.initialValueText = v ? v.text : null;
   return !!v;
+}
+function planKind(ind){
+  const s=(ind||'').toLowerCase();
+  if(s.includes('unid')) return 'unid';
+  if(s.includes('art x') || s.includes('articulo') || s.includes('axt')) return 'axt';
+  if(s.includes('tk') || s.includes('ticket promedio') || /\btp\b/.test(s)) return 'tp';
+  if(s.includes('tráfico') || s.includes('trafico') || s.includes('ticket')) return 'trafico';
+  return 'venta';
+}
+function planTargetFor(p){
+  if(p.targetValue!==null && p.targetValue!==undefined) return p.targetValue;
+  const t = p.targetText || '';
+  if(!t) return null;
+  const k = planKind(p.indicator);
+  const num = x=>{ const n=parseCellNum(x); return n; };
+  const pats = {
+    unid:/(unid\w*)\s*[:=]?\s*([\d.,]+)/i,
+    axt:/(axt|art\w*\s*x\s*t\w*)\s*[:=]?\s*([\d.,]+)/i,
+    tp:/(tp|tk\s*prom\w*|ticket\s*prom\w*)\s*[:=]?\s*\$?\s*([\d.,]+)/i,
+    trafico:/(tickets?|tr[aá]fico)\s*[:=]?\s*([\d.,]+)/i,
+    venta:/(venta|vta|importe|facturaci\w*)\s*[:=]?\s*\$?\s*([\d.,]+)/i
+  };
+  const m = pats[k].exec(t);
+  if(m) return num(m[2]);
+  // meta con un único número y sin etiquetas
+  const only = t.replace(/[$\s]/g,'');
+  if(/^[\d.,]+$/.test(only)) return num(only);
+  return null;
+}
+function planProgressHtml(storeId, p){
+  const target = planTargetFor(p);
+  if(target===null || target===undefined || !(target>0)) return '';
+  const kind = planKind(p.indicator);
+  const cumulative = (kind==='unid' || kind==='venta' || kind==='trafico');
+  const open = p.status==='en_curso';
+  const liveObj = open ? getIndicatorLiveValue(storeId, p.indicator, p.createdAt) : null;
+  const cur = open ? (liveObj ? liveObj.raw : null) : (p.closingValue!==undefined ? p.closingValue : null);
+  const fmt = v=>formatIndicatorValue(p.indicator, v);
+  if(cur===null){
+    return `<div class="meta" style="margin-top:2px;flex-direction:column;align-items:stretch;"><span style="font-size:11px;color:var(--muted);">Progreso hacia la meta (${fmt(target)}): todavía no hay ventas cargadas desde el inicio del plan.</span><div class="kpi-fill-track"><div class="kpi-fill-bar" style="width:0%"></div></div></div>`;
+  }
+  const today = todayISO();
+  let frac = 1;
+  if(open && cumulative && p.targetDate && p.createdAt){
+    const total = daysBetweenInclusive(p.createdAt, p.targetDate);
+    const el = daysBetweenInclusive(p.createdAt, today < p.createdAt ? p.createdAt : today);
+    if(total>0) frac = Math.max(0, Math.min(1, el/total));
+  }
+  const pct = cur/target*100;
+  let cls, label;
+  if(cumulative && open){
+    const expected = target*frac;
+    const ratio = expected>0 ? cur/expected : 1;
+    cls = (cur>=target || ratio>=1) ? 'good' : ratio>=0.85 ? 'warn' : 'crit';
+  } else {
+    const ratio = cur/target;
+    cls = ratio>=1 ? 'good' : ratio>=0.9 ? 'warn' : 'crit';
+  }
+  label = cls==='good' ? 'Superando' : cls==='warn' ? 'Al límite' : 'Voy mal';
+  const color = cls==='good' ? 'var(--green)' : cls==='warn' ? 'var(--amber)' : 'var(--red)';
+  const w = Math.max(0, Math.min(100, pct));
+  const tick = (cumulative && open && frac>0 && frac<1) ? `<div title="Ritmo esperado a hoy" style="position:absolute;left:${(frac*100).toFixed(1)}%;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.55;"></div>` : '';
+  const extra = (cumulative && open && p.targetDate) ? ` · ritmo esperado a hoy: ${fmtPct(frac*100)}` : '';
+  return `<div class="meta" style="margin-top:2px;flex-direction:column;align-items:stretch;">
+    <span style="font-size:11.5px;color:var(--ink-soft);"><strong style="color:${color};">${label}</strong> · Progreso hacia la meta: ${escapeHtml(formatIndicatorValue(p.indicator,cur))} de ${escapeHtml(fmt(target))} (${fmtPct(pct)})${extra}</span>
+    <div class="kpi-fill-track" style="position:relative;overflow:visible;"><div class="kpi-fill-bar" style="width:${w}%;background:${color};"></div>${tick}</div>
+  </div>`;
 }
 function planAutoStatus(storeId, p, upToDate){
   const today = todayISO();
@@ -3393,7 +3482,6 @@ function renderPlanCard(p){
           ${isOverdue?'<span class="overdue-tag">Vencido</span>':''}
           ${isDueSoon?`<span class="overdue-tag" style="background:var(--amber-soft);color:var(--amber);">Vence en ${daysBetweenInclusive(todayISO(), p.targetDate)} día(s)</span>`:''}
           ${isStalledHalfway?`<span class="overdue-tag" style="background:var(--amber-soft);color:var(--amber);">Sin mejora a mitad de plazo</span>`:''}
-          ${isNoFollowUp?`<span class="overdue-tag" style="background:var(--amber-soft);color:var(--amber);">Sin seguimiento hace ${daysSinceFollowUp} día(s)</span>`:''}
           ${(p.status!=='en_curso' && p.closedAt && daysBetweenInclusive(p.closedAt, todayISO())<=3) ? `<span class="overdue-tag" style="background:var(--green-soft);color:var(--green);">Cerrado recientemente${p.autoClosed?' (automático)':''}</span>` : ''}
         </div>
         <div style="display:flex;gap:10px;align-items:center;">
@@ -3432,20 +3520,7 @@ function renderPlanCard(p){
           <input class="ef-input" type="text" value="${escapeHtml(p.targetText ? p.targetText : (p.targetValue!==null&&p.targetValue!==undefined?String(p.targetValue):''))}" style="display:none;border:1px solid var(--border);border-radius:4px;font-size:11.5px;padding:2px 4px;max-width:220px;">
         </span>
       </div>
-      ${(p.targetValue!==null && p.targetValue!==undefined && p.initialValue!==null) ? (function(){
-        const cur = p.status==='en_curso' ? (getIndicatorLiveValue(activeStoreId, p.indicator, p.createdAt)||{}).raw : p.closingValue;
-        if(cur===undefined || cur===null) return '';
-        let pct;
-        if(p.targetValue > p.initialValue) pct = (cur-p.initialValue)/(p.targetValue-p.initialValue)*100;
-        else if(p.targetValue < p.initialValue) pct = (p.initialValue-cur)/(p.initialValue-p.targetValue)*100;
-        else pct = cur>=p.targetValue ? 100 : 0;
-        pct = Math.max(0, Math.min(100, pct));
-        const cls = pct>=100?'good':pct>=50?'warn':'crit';
-        return `<div class="meta" style="margin-top:2px;flex-direction:column;align-items:stretch;">
-          <span style="font-size:11px;color:var(--muted);">Progreso hacia la meta: ${fmtPct(pct)}</span>
-          <div class="kpi-fill-track"><div class="kpi-fill-bar ${cls==='good'?'':''}" style="width:${pct}%;background:${cls==='good'?'var(--green)':cls==='warn'?'var(--amber)':'var(--red)'};"></div></div>
-        </div>`;
-      })() : ''}
+      ${planProgressHtml(activeStoreId, p)}
       ${p.initialValueText ? (function(){
         const isTk = (p.indicator||'').toLowerCase().includes('tk') || (p.indicator||'').toLowerCase().includes('ticket promedio');
         const colorFromClass = (cls)=> cls==='good'?'var(--green)':cls==='warn'?'var(--amber)':cls==='crit'?'var(--red)':'var(--ink-soft)';
