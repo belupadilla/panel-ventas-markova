@@ -481,7 +481,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 14:50</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 15:10</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -3926,10 +3926,7 @@ function renderOverview(){
         <div class="overview-card" data-store="${sm.store.id}">
           <div class="ov-name">${escapeHtml(sm.store.name)}</div>
           <div class="ov-stats">
-            ${sm.totalAlerts>0 ? `<span class="ov-badge ${sm.crit>0?'crit':'warn'}">${sm.totalAlerts} alerta${sm.totalAlerts>1?'s':''}</span>` : `<span class="ov-badge good">Sin alertas</span>`}
             <span>${sm.enCurso} plan(es) en curso</span>
-            ${sm.vencidos>0 ? `<span class="ov-badge overdue">${sm.vencidos} vencido${sm.vencidos>1?'s':''}</span>` : ''}
-            ${sm.sinSeguimiento>0 ? `<span class="ov-badge warn">${sm.sinSeguimiento} sin seguimiento</span>` : ''}
           </div>
         </div>
       `).join('') : `<div class="empty" style="padding:30px 0;font-size:14px;">Todavía no agregaste locales.</div>`}
