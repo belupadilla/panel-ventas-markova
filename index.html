@@ -503,7 +503,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 17:45</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 18:00</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -1405,6 +1405,21 @@ function xePrep(f){
     .replace(new RegExp(ref+'\\s*(?<![<>])=\\s*""','g'), 'IF(ISBLANK($1),TRUE,$1="")');
 }
 // SUMPRODUCT con operaciones entre rangos, ej.: SUMPRODUCT((D8:D16<>"")*B8:B16): se evalúa fila a fila
+// SUMPRODUCT dentro de una fórmula más grande: lo reemplaza por la suma de sus filas (ej. (1-C32)/SUMPRODUCT(...))
+function xeExpandSumproducts(f){
+  let out = f, guard = 0;
+  while(guard++ < 20){
+    const m = /SUMPRODUCT\s*\(/i.exec(out); if(!m) break;
+    let i = m.index + m[0].length, depth = 1, q = false;
+    for(; i<out.length; i++){ const ch = out[i]; if(ch==='"') q=!q; if(q) continue; if(ch==='(') depth++; else if(ch===')'){ depth--; if(depth===0) break; } }
+    if(depth!==0) break;
+    const call = out.slice(m.index, i+1);
+    const parts = xeSumproductParts(call);
+    if(!parts) break;
+    out = out.slice(0, m.index) + '(' + parts.map(x=>'('+x+')').join('+') + ')' + out.slice(i+1);
+  }
+  return out;
+}
 function xeSumproductParts(f){
   const m = /^\s*SUMPRODUCT\s*\(([\s\S]*)\)\s*$/i.exec(f); if(!m) return null;
   const inner = m[1]; let depth=0, q=false;
@@ -1460,7 +1475,7 @@ function xeRecalc(onlyMissing){
         }
         res = err || tot;
       } else {
-        res = parser.parse(xePrep(f), { sheet:sh, row:r, col:c });
+        res = parser.parse(xePrep(xeExpandSumproducts(f)), { sheet:sh, row:r, col:c });
         if(Array.isArray(res)) res = Array.isArray(res[0]) ? res[0][0] : res[0];
       }
     }catch(e){ res = (e && e.error) ? e : undefined; }
