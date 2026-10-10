@@ -36,6 +36,7 @@
   .storeitem{display:flex;align-items:center;justify-content:space-between;padding:9px 10px;border-radius:6px;font-size:13.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;transition:background .12s;}
   .storeitem:hover{background:var(--hover-bg);}
   .storeitem.active{background:var(--black-pill);color:#fff;}
+  .storeitem .bell{font-size:13px;margin-left:4px;}
   .storeitem .del{opacity:0;font-weight:400;font-size:12px;color:var(--red);transition:opacity .12s;}
   .storeitem:hover .del{opacity:.6;}
   .storeitem.active .del{color:#fff;}
@@ -349,7 +350,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 09/10/2026 · 21:00</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 10:45</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -1778,7 +1779,8 @@ function renderStoreList(){
   const filtered = sortedStores().filter(s=>!term || (s.name||'').toLowerCase().includes(term));
   list.innerHTML = filtered.length ? filtered.map(s=>{
     const active = (!compareMode && !overviewMode && !progresoMode && s.id===activeStoreId) ? 'active' : '';
-    return `<div class="storeitem ${active}" data-id="${s.id}"><span>${escapeHtml(s.name)}</span><span class="del" data-del="${s.id}">✕</span></div>`;
+    const bell = (unreadNotes(s.id).length || newPlans(s.id).length) ? ' <span class="bell" title="Hay novedades en este local">🔔</span>' : '';
+    return `<div class="storeitem ${active}" data-id="${s.id}"><span>${escapeHtml(s.name)}${bell}</span><span class="del" data-del="${s.id}">✕</span></div>`;
   }).join('') : `<div style="font-size:12px;color:var(--muted);padding:8px 4px;">Sin resultados</div>`;
   list.querySelectorAll('.storeitem').forEach(el=>{
     el.addEventListener('click',(ev)=>{ if(ev.target.dataset.del) return; activeStoreId=el.dataset.id; compareMode=false; overviewMode=false; progresoMode=false; render(); });
@@ -1864,7 +1866,7 @@ function renderViewTabs(){
   el.innerHTML = `
     <button class="tabbtn ${activeView==='daily'?'active':''}" data-view="daily">Vista diaria</button>
     <button class="tabbtn ${activeView==='monthly'?'active':''}" data-view="monthly">Vista mensual</button>
-    <button class="tabbtn ${activeView==='plan'?'active':''}" data-view="plan">Plan de acción${enCursoCount?` (${enCursoCount})`:''}${noFollowUpPlans(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">⚠ Sin seguimiento</span>`:''}${unreadNotes(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">🔔 Nota de seguimiento activa</span>`:''}</button>
+    <button class="tabbtn ${activeView==='plan'?'active':''}" data-view="plan">Plan de acción${enCursoCount?` (${enCursoCount})`:''}${newPlans(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">🔔 Plan nuevo</span>`:''}${noFollowUpPlans(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">⚠ Sin seguimiento</span>`:''}${unreadNotes(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">🔔 Nota de seguimiento activa</span>`:''}</button>
   `;
   el.querySelectorAll('.tabbtn').forEach(b=>b.onclick=()=>{ activeView=b.dataset.view; render(); });
 }
@@ -1873,6 +1875,20 @@ function unreadNotes(storeId){
   const out=[];
   (state.plans[storeId]||[]).forEach(p=>(p.followUps||[]).forEach(f=>{ if(f.nueva && (f.note||'').trim()) out.push({plan:p, fu:f}); }));
   return out.sort((a,b)=>b.fu.date.localeCompare(a.fu.date));
+}
+function newPlans(storeId){
+  return (state.plans[storeId]||[]).filter(p=>p.nuevo===true && p.status==='en_curso');
+}
+function newPlanAlertHtml(storeId, p){
+  return `<div class="alert warn note-alert">
+    <span class="dot"></span>
+    <div class="body">
+      <div class="title">Nuevo plan de acción cargado</div>
+      <div class="detail">${(p.createdAt||'').split('-').reverse().join('/')} · «${escapeHtml(p.indicator||'')}»: ${escapeHtml(p.description||'')}</div>
+    </div>
+    <button class="mkplan note-go" type="button" data-store="${storeId}" data-plan="${p.id}">Ver plan</button>
+    <button class="mkplan plan-seen" type="button" data-store="${storeId}" data-plan="${p.id}">Marcar visto</button>
+  </div>`;
 }
 function noFollowUpPlans(storeId){
   const out=[]; const today=todayISO();
@@ -1916,6 +1932,13 @@ function attachNoteHandlers(root){
       focusPlanId=b.dataset.plan; render();
     };
   });
+  (root||document).querySelectorAll('.plan-seen').forEach(b=>{
+    b.onclick = async (ev)=>{
+      ev.stopPropagation();
+      const plan=(state.plans[b.dataset.store]||[]).find(x=>x.id===b.dataset.plan);
+      if(plan){ plan.nuevo=false; await saveState(); render(); }
+    };
+  });
   (root||document).querySelectorAll('.note-read').forEach(b=>{
     b.onclick = async (ev)=>{
       ev.stopPropagation();
@@ -1928,7 +1951,7 @@ function attachNoteHandlers(root){
 function alertsPanelHtml(storeId){
   const alerts = computeAlerts(storeId);
   const notes = unreadNotes(storeId);
-  const notesHtml = noFollowUpPlans(storeId).map(n=>noFollowAlertHtml(storeId,n)).join('') + notes.map(n=>noteAlertHtml(storeId,n,false)).join('');
+  const notesHtml = newPlans(storeId).map(p=>newPlanAlertHtml(storeId,p)).join('') + noFollowUpPlans(storeId).map(n=>noFollowAlertHtml(storeId,n)).join('') + notes.map(n=>noteAlertHtml(storeId,n,false)).join('');
   let inner;
   if(!alerts.length){
     inner = notesHtml + `<div class="allgood">✓ Sin alertas activas en el período seleccionado.</div>`;
@@ -1950,7 +1973,7 @@ function alertsPanelHtml(storeId){
 }
 function attachAlertHandlers(){
   attachNoteHandlers(document);
-  document.querySelectorAll('.mkplan').forEach(btn=>{
+  document.querySelectorAll('.mkplan:not(.note-go):not(.note-read):not(.plan-seen)').forEach(btn=>{
     btn.onclick = ()=>{
       try{
         pendingPlanIndicator = btn.dataset.indicator;
@@ -3049,7 +3072,7 @@ function renderPlanView(){
     const targetValue = targetText!=='' ? parseCellNum(targetText) : null;
     if(!description){ showToast('Escribí el plan de acción antes de crearlo'); return; }
     const initial = getIndicatorValueData(activeStoreId, indicator);
-    const plan = { id:uid(), indicator, description, targetDate, status:'en_curso', createdAt:startDate, followUps:[], blocks:pendingPlanBlocks,
+    const plan = { id:uid(), nuevo:true, indicator, description, targetDate, status:'en_curso', createdAt:startDate, followUps:[], blocks:pendingPlanBlocks,
       responsable, targetValue, targetText,
       initialValue: null, initialValueText: null,
       closingValue: null, closingValueText: null, attachments: [] };
