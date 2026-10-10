@@ -481,7 +481,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 14:05</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 13:25</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -1606,32 +1606,6 @@ function daysOfRangeInMonth(start, end, mKey){
   if(rs > re) return 0;
   return daysBetweenInclusive(rs, re);
 }
-function dayObjectiveWeights(storeId, m){
-  // Objetivo de venta de cada día del mes según la meta diaria de la grilla; los días sin meta se completan
-  // repartiendo parejo lo que falta del objetivo mensual. Devuelve null si la grilla no tiene metas en ese mes.
-  const totalDays = lastDayOfMonth(m);
-  const metaByDate = {}; let metaMonth = 0;
-  entriesForStore(storeId).forEach(e=>{ if(e.date.slice(0,7)===m && Number(e.meta)>0 && metaByDate[e.date]===undefined){ metaByDate[e.date]=Number(e.meta); metaMonth+=Number(e.meta); } });
-  const nMeta = Object.keys(metaByDate).length;
-  if(!nMeta) return null;
-  const fc = getForecast(storeId, m).importe||0;
-  const missing = totalDays - nMeta;
-  const perMissing = missing>0 ? Math.max(0, (fc - metaMonth)/missing) : 0;
-  const w = {}; let tot = 0;
-  for(let d=1; d<=totalDays; d++){
-    const iso = m+'-'+String(d).padStart(2,'0');
-    w[iso] = metaByDate[iso]!==undefined ? metaByDate[iso] : perMissing; tot += w[iso];
-  }
-  return {w, tot};
-}
-function dayObjective(storeId, iso, field){
-  // Objetivo de un día para venta (importe), artículos o tickets, siguiendo el peso de ese día en la grilla
-  const m = iso.slice(0,7); const f = getForecast(storeId, m);
-  const dw = dayObjectiveWeights(storeId, m);
-  if(!dw || !(dw.tot>0)) return (f[field]||0)/lastDayOfMonth(m);
-  if(field==='importe') return dw.w[iso];
-  return (f[field]||0) * dw.w[iso]/dw.tot;
-}
 function expectedForRange(storeId, start, end, source, field){
   let total = 0;
   monthsOverlapping(start, end).forEach(m=>{
@@ -1639,14 +1613,11 @@ function expectedForRange(storeId, start, end, source, field){
     if(daysInRange<=0) return;
     const totalDays = lastDayOfMonth(m);
     const obj = source==='forecast' ? getForecast(storeId, m) : getAnt(storeId, m);
-    if(source==='forecast' && daysInRange<totalDays){
-      const dw = dayObjectiveWeights(storeId, m);
-      if(dw && dw.tot>0){
-        let sum = 0;
-        Object.keys(dw.w).forEach(iso=>{ if(iso>=start && iso<=end) sum += dw.w[iso]; });
-        total += field==='importe' ? sum : (obj[field]||0)*sum/dw.tot;
-        return;
-      }
+    if(source==='forecast' && field==='importe' && daysInRange<totalDays){
+      // Rango parcial: si la grilla tiene la meta de CADA día del rango, se usa esa suma (respeta fines de semana, promociones, etc.)
+      const ds = new Set(); let sumMeta = 0;
+      entriesInRange(storeId, start, end).forEach(e=>{ if(e.date.slice(0,7)===m && Number(e.meta)>0 && !ds.has(e.date)){ ds.add(e.date); sumMeta += Number(e.meta); } });
+      if(ds.size===daysInRange){ total += sumMeta; return; }
     }
     total += (obj[field]||0) * daysInRange/totalDays;
   });
@@ -2211,7 +2182,7 @@ function renderDailyView(){
         <div class="value">${monthlyForecast.importe>0 ? fmtMoney(monthlyForecast.importe) : '— sin cargar —'}</div>
         <div class="note">${MONTH_NAMES[Number(displayedMonthKey.slice(5,7))-1]} ${displayedMonthKey.slice(0,4)}${monthlyForecast.importe>0 ? '' : ' · cargalo en Vista mensual'}</div>
       </div>
-      <div class="kpi"><div class="label">Venta del período</div><div class="value" id="kpiImporte">${fmtMoney(agg.sales)}</div><div class="note" id="kpiImporteNote">${loadedDays} día(s) cargado(s) de ${rangeEntries.length} · (${rangeLabel})${fc.importe>0?`<br>Objetivo de esos días: <strong>${fmtMoney(fc.importe)}</strong>`:''}</div></div>
+      <div class="kpi"><div class="label">Venta del período</div><div class="value" id="kpiImporte">${fmtMoney(agg.sales)}</div><div class="note" id="kpiImporteNote">${loadedDays} día(s) cargado(s) de ${rangeEntries.length} · (${rangeLabel})</div></div>
       <div class="kpi ${statusClass(cumMeta, agg.meta>0)}" id="kpiCumMetaCard">
         <div class="label">Cumplimiento vs. Meta diaria</div>
         <div class="value small" id="kpiCumMeta">${agg.meta>0? vsObj(cumMeta) : (hasAnyMetaLoaded ? '— sin ventas cargadas —' : '— sin metas cargadas —')}</div>
@@ -2507,7 +2478,7 @@ function recomputeTotals(){
   const loadedDays = rangeEntries.filter(e=>e.sales!==null && e.sales!==undefined).length;
   const setText = (id,txt)=>{ const el=document.getElementById(id); if(el) el.textContent = txt; };
   setText('kpiImporte', fmtMoney(agg.sales));
-  { const n=document.getElementById('kpiImporteNote'); if(n) n.innerHTML = `${loadedDays} día(s) cargado(s) de ${rangeEntries.length}` + (fc.importe>0 ? `<br>Objetivo de esos días: <strong>${fmtMoney(fc.importe)}</strong>` : ''); }
+  setText('kpiImporteNote', `${loadedDays} día(s) cargado(s) de ${rangeEntries.length}`);
   setText('kpiCumMeta', agg.meta>0? vsObj(cumMeta) : (hasAnyMetaLoaded ? '— sin ventas cargadas —' : '— sin metas cargadas —'));
   setText('kpiCumMetaNote', agg.meta>0? 'Meta acumulada (días cargados): '+fmtMoney(agg.meta) : (hasAnyMetaLoaded ? 'Ya tenés metas cargadas — falta completar la venta real de esos días en la planilla' : 'Se completa a medida que cargás días con meta'));
   setText('kpiCumPron', fc.importe>0? vsObj(ritmoPct) : '— sin pronóstico —');
@@ -3031,8 +3002,8 @@ function planObjCompare(storeId, p, upToDate){
   const ents = entriesInRange(storeId, p.createdAt, end).filter(e=>e.sales!==null && e.sales!==undefined);
   if(!ents.length) return null;
   let obj = 0;
-  // Objetivo de cada día según la grilla (para artículos y tickets, el mismo peso diario aplicado al objetivo mensual)
-  ents.forEach(e=>{ obj += dayObjective(storeId, e.date, field); });
+  // Objetivo de cada día = meta de la grilla (si está cargada); si falta, se reparte parejo el objetivo mensual
+  ents.forEach(e=>{ const m = e.date.slice(0,7); if(field==='importe' && Number(e.meta)>0){ obj += Number(e.meta); return; } const f = getForecast(storeId, m); obj += (f[field]||0)/lastDayOfMonth(m); });
   if(!(obj>0)) return null;
   const agg = aggEntries(ents);
   const real = field==='importe' ? agg.sales : field==='articulos' ? agg.articulos : agg.tickets;
