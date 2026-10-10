@@ -301,7 +301,7 @@
   .sheet-scroll.xe .xv{padding:1px 4px;box-sizing:border-box;font-family:Calibri,Carlito,'Segoe UI',Arial,sans-serif;font-size:14.67px;line-height:1.25;color:inherit}
   .sheet-scroll.xe td.sel{outline:2px solid var(--blue);outline-offset:-2px}
   .sheet-scroll.xe td.ed{box-shadow:inset 0 0 0 2px #f2b800}
-  .sheet-scroll.xe td.fx{cursor:default}
+  .sheet-scroll.xe td.fx{cursor:cell}
   .sheet-scroll.xe td textarea.xta{position:absolute;inset:0;width:100%;height:100%;min-height:24px;border:2px solid var(--blue);padding:1px 4px;resize:none;z-index:3;box-sizing:border-box;background:#fff;color:#000;outline:none}
   .rt-editor{min-height:170px;font-size:15px;line-height:1.6;padding:13px 15px;border:1px solid var(--border);border-radius:0 0 8px 8px;background:#fff;color:var(--ink);font-family:'Inter',sans-serif;outline:none;overflow-wrap:anywhere}
   .rt-editor:focus{border-color:var(--ink)}
@@ -496,7 +496,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 17:15</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 17:45</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -1074,7 +1074,7 @@ function edRenderGrid(){
     document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up);
   }));
   edSelLabel();
-  let note = 'Arrastrá el borde de una letra de columna o de un número de fila para agrandarla. Las celdas con fórmula (en gris) no se editan. Lo que cambies se marca en amarillo y se guarda con "Guardar cambios". Con Alt+Enter hacés un salto de línea dentro de la celda.';
+  let note = 'Arrastrá el borde de una letra de columna o de un número de fila para agrandarla. Las fórmulas se recalculan solas al cambiar una celda, y también podés escribir una fórmula empezando con =. Lo que cambies se marca en amarillo y se guarda con "Guardar cambios". Con Alt+Enter hacés un salto de línea dentro de la celda.';
   note += ' Hoja de '+(r.e.r+1)+' filas y '+(r.e.c+1)+' columnas: ';
   note += (ED.shown < r.e.r+1) ? 'se muestran las primeras '+ED.shown+' filas y se cargan más al bajar.' : 'se muestran todas.';
   if(r.e.c>=ED_MAX_COLS) note += ' (Se ven las primeras '+ED_MAX_COLS+' columnas.)';
@@ -1320,6 +1320,109 @@ function xeRender(){
   edSelLabel();
   document.getElementById('sheetNote').textContent = 'Se muestra con el formato original del archivo. Tocá una celda para editarla (Enter confirma, Alt+Enter hace un salto de línea, Esc cancela). Las celdas con fórmula no se editan: se calculan al abrir el archivo en Excel. Hoja de '+nR+' filas y '+nC+' columnas'+(ED.shown<nR?': se muestran las primeras '+ED.shown+' filas y se cargan más al bajar.':'.')+' Lo que cambies se marca con borde amarillo y se guarda con "Guardar cambios". Gráficos y formatos muy especiales pueden no conservarse.';
 }
+// ---- Recálculo de fórmulas (motor fast-formula-parser, licencia MIT) ----
+let ffpPromise = null;
+function ffpLoad(){
+  if(typeof FormulaParser!=='undefined') return Promise.resolve(true);
+  if(ffpPromise) return ffpPromise;
+  const urls = ['ffp.min.js?v=1','https://cdn.jsdelivr.net/npm/fast-formula-parser@1.0.19/build/parser.min.js'];
+  ffpPromise = (async()=>{
+    for(const u of urls){
+      const ok = await new Promise(res=>{ const sc=document.createElement('script'); sc.src=u; sc.onload=()=>res(typeof FormulaParser!=='undefined'); sc.onerror=()=>res(false); document.head.appendChild(sc); });
+      if(ok) return true;
+    }
+    ffpPromise = null; return false;
+  })();
+  return ffpPromise;
+}
+function xeFormulaOf(cell){
+  const v = cell && cell.value;
+  if(!v || typeof v!=='object' || v instanceof Date) return null;
+  if(v.formula===undefined && v.sharedFormula===undefined) return null;
+  if(v.shareType==='array') return null; // fórmulas matriciales: se dejan con su último resultado
+  let f = '';
+  try{ f = cell.formula || v.formula || ''; }catch(e){ f = v.formula || ''; }
+  return f ? String(f) : null;
+}
+function xeCellPlain(cell){
+  if(!cell) return null;
+  const v = cell.value;
+  if(v===null || v===undefined) return null;
+  if(v instanceof Date) return xlSerial(v);
+  if(typeof v==='object'){
+    if(v.formula!==undefined || v.sharedFormula!==undefined){ const r=v.result; if(r instanceof Date) return xlSerial(r); if(r && typeof r==='object' && r.error) return r.error; return r===undefined?null:r; }
+    if(v.richText) return v.richText.map(t=>t.text).join('');
+    if(v.error) return v.error;
+    if(v.text!==undefined) return String(v.text);
+  }
+  return v;
+}
+// Recalcula todas las fórmulas del libro. onlyMissing=true: solo las que no traen resultado guardado.
+function xeRecalc(onlyMissing){
+  if(!ED || !ED.x || typeof FormulaParser==='undefined') return 0;
+  const wb = ED.wb; const cache = new Map(); const busy = new Set(); let changed = 0;
+  const key = (sh,r,c)=>sh+'!'+r+':'+c;
+  const shOf = n=>{ try{ return wb.getWorksheet(n); }catch(e){ return null; } };
+  let parser;
+  const evalCell = (sh, r, c)=>{
+    const k = key(sh,r,c);
+    if(cache.has(k)) return cache.get(k);
+    const ws = shOf(sh); const cell = ws ? ws.findCell(r,c) : null;
+    const f = xeFormulaOf(cell);
+    if(!f){ const pv = xeCellPlain(cell); cache.set(k,pv); return pv; }
+    if(onlyMissing){ const cur = xeCellPlain(cell); if(cur!==null && cur!==undefined){ cache.set(k,cur); return cur; } }
+    if(busy.has(k)) return { error:'#REF!' };
+    busy.add(k);
+    let res;
+    try{
+      res = parser.parse(f, { sheet:sh, row:r, col:c });
+      if(Array.isArray(res)) res = Array.isArray(res[0]) ? res[0][0] : res[0];
+    }catch(e){ res = (e && e.error) ? e : undefined; }
+    busy.delete(k);
+    if(res===undefined || res===null) res = (res===null ? 0 : undefined);
+    if(res && typeof res==='object' && !(res instanceof Date) && res.error===undefined && res.message!==undefined) res = { error:'#VALUE!' };
+    if(res!==undefined){
+      const store = (res && typeof res==='object' && res.error!==undefined) ? { error:String(res.error) } : res;
+      const prev = cell.value && cell.value.result;
+      const same = (prev===store) || (prev && store && typeof prev==='object' && typeof store==='object' && prev.error===store.error);
+      if(!same){
+        const mod = cell.value;
+        cell.value = { formula:f, result:store };
+        if(mod && mod.date1904!==undefined) cell.value.date1904 = mod.date1904;
+        changed++;
+      }
+      cache.set(k, (store && typeof store==='object' && store.error!==undefined) ? store.error : store);
+      return cache.get(k);
+    }
+    const old = xeCellPlain(cell); cache.set(k, old); return old;
+  };
+  parser = new FormulaParser({
+    onCell: ref=>evalCell(ref.sheet, ref.row, ref.col),
+    onRange: ref=>{
+      const out = [];
+      for(let r=ref.from.row; r<=ref.to.row; r++){ const row=[]; for(let c=ref.from.col; c<=ref.to.col; c++) row.push(evalCell(ref.sheet, r, c)); out.push(row); }
+      return out;
+    },
+    onVariable: ()=>null
+  });
+  wb.worksheets.forEach(ws=>{
+    ws.eachRow({includeEmpty:false}, (row, rn)=>{
+      row.eachCell({includeEmpty:false}, (cell, cn)=>{ if(xeFormulaOf(cell)) evalCell(ws.name, rn, cn); });
+    });
+  });
+  try{ wb.calcProperties = Object.assign(wb.calcProperties||{}, { fullCalcOnLoad:true }); }catch(e){}
+  return changed;
+}
+function xeRefreshFormulaCells(){
+  const grid = document.getElementById('sheetGrid'); if(!grid || !ED || !ED.x) return;
+  grid.querySelectorAll('td[data-r]').forEach(td=>{
+    const r = Number(td.dataset.r), c = Number(td.dataset.c);
+    const cell = ED.ws.findCell(r+1,c+1);
+    if(!xeFormulaOf(cell) && !td.classList.contains('fx')) return;
+    const it = xeCellInner(r,c);
+    const dv = td.querySelector('.xv'); if(dv && dv.textContent!==it.txt) dv.textContent = it.txt;
+  });
+}
 function xeParse(txt, cell){
   const t = txt.trim();
   if(t==='') return null;
@@ -1344,11 +1447,13 @@ function xeSelectOrEdit(td){
   ED.sel = { r, c };
   document.querySelectorAll('#sheetGrid td.sel').forEach(x=>x.classList.remove('sel'));
   td.classList.add('sel'); edSelLabel();
-  if(td.classList.contains('fx')) return;
   const cell = ED.ws.findCell(r+1,c+1);
   const rw = xlRaw(cell);
+  const fxText = xeFormulaOf(cell);
+  if(td.classList.contains('fx') && !fxText) return; // fórmulas matriciales: solo lectura
   let val = '';
-  if(rw.v instanceof Date) val = xlText(rw.v,'dd/mm/yyyy'); else if(rw.v!==null && rw.v!==undefined) val = String(rw.v);
+  if(fxText) val = '=' + fxText;
+  else if(rw.v instanceof Date) val = xlText(rw.v,'dd/mm/yyyy'); else if(rw.v!==null && rw.v!==undefined) val = String(rw.v);
   const ta = document.createElement('textarea'); ta.className = 'xta'; ta.value = val;
   const dv = td.querySelector('.xv'); if(dv){ const cs = getComputedStyle(dv); ta.style.font = cs.font; ta.style.textAlign = cs.textAlign; }
   td.appendChild(ta); ta.focus(); ta.select();
@@ -1376,12 +1481,18 @@ function xeCommit(){
   const { td, r, c, ta, orig } = ed; const v = ta.value; ta.remove();
   if(v===orig) return;
   const cell = ED.ws.getCell(r+1,c+1);
-  cell.value = xeParse(v, cell);
+  const isF = /^\s*=/.test(v) && v.trim().length>1;
+  const wasF = !!xeFormulaOf(cell);
+  if(isF) cell.value = { formula: v.trim().slice(1) };
+  else cell.value = xeParse(v, cell);
   (ED.editedSet = ED.editedSet || new Set()).add(r+','+c);
   ED.dirty = true;
+  if(isF || wasF){ xeRecalc(false); } else { xeRecalc(false); }
   const it = xeCellInner(r,c);
-  td.classList.add('ed'); td.setAttribute('style', it.st.td + (td.style.display==='none'?';display:none':''));
+  td.classList.add('ed'); td.classList.toggle('fx', !!xeFormulaOf(cell));
+  td.setAttribute('style', it.st.td + (td.style.display==='none'?';display:none':''));
   const dv = td.querySelector('.xv'); if(dv){ dv.textContent = it.txt; }
+  xeRefreshFormulaCells();
 }
 function xeShift(axis, at0, delta){
   const ws = ED.ws;
@@ -1439,6 +1550,7 @@ async function openSheetEditor(plan, att){
         const bin = atob(b64); const u8 = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
         const xwb = new ExcelJS.Workbook(); await xwb.xlsx.load(u8.buffer);
         ED = { x:true, plan, att, wb:xwb, sheet:xwb.worksheets[0].name, ws:xwb.worksheets[0], dirty:false };
+        ffpLoad().then(ok=>{ if(ok && ED && ED.x && ED.wb===xwb){ try{ if(xeRecalc(true)) xeRefreshFormulaCells(); }catch(e){ console.warn('recalc inicial', e); } } });
         document.getElementById('sheetTitle').textContent = att.name;
         document.getElementById('sheetSub').textContent = 'Plan: ' + (plan.indicator||'') + ' · ' + fmtSize(att.size||0);
         edRenderTabs(); edRenderGrid();
