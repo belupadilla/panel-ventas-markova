@@ -481,7 +481,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 13:00</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 13:25</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -1613,6 +1613,12 @@ function expectedForRange(storeId, start, end, source, field){
     if(daysInRange<=0) return;
     const totalDays = lastDayOfMonth(m);
     const obj = source==='forecast' ? getForecast(storeId, m) : getAnt(storeId, m);
+    if(source==='forecast' && field==='importe' && daysInRange<totalDays){
+      // Rango parcial: si la grilla tiene la meta de CADA día del rango, se usa esa suma (respeta fines de semana, promociones, etc.)
+      const ds = new Set(); let sumMeta = 0;
+      entriesInRange(storeId, start, end).forEach(e=>{ if(e.date.slice(0,7)===m && Number(e.meta)>0 && !ds.has(e.date)){ ds.add(e.date); sumMeta += Number(e.meta); } });
+      if(ds.size===daysInRange){ total += sumMeta; return; }
+    }
     total += (obj[field]||0) * daysInRange/totalDays;
   });
   return total;
@@ -2993,10 +2999,11 @@ function planObjCompare(storeId, p, upToDate){
   let end = (upToDate && upToDate<today) ? upToDate : today;
   if(p.targetDate && p.targetDate<end) end = p.targetDate;
   if(end<p.createdAt) return null;
-  const ents = entriesInRange(storeId, p.createdAt, end);
+  const ents = entriesInRange(storeId, p.createdAt, end).filter(e=>e.sales!==null && e.sales!==undefined);
   if(!ents.length) return null;
   let obj = 0;
-  ents.forEach(e=>{ const m = e.date.slice(0,7); const f = getForecast(storeId, m); obj += (f[field]||0)/lastDayOfMonth(m); });
+  // Objetivo de cada día = meta de la grilla (si está cargada); si falta, se reparte parejo el objetivo mensual
+  ents.forEach(e=>{ const m = e.date.slice(0,7); if(field==='importe' && Number(e.meta)>0){ obj += Number(e.meta); return; } const f = getForecast(storeId, m); obj += (f[field]||0)/lastDayOfMonth(m); });
   if(!(obj>0)) return null;
   const agg = aggEntries(ents);
   const real = field==='importe' ? agg.sales : field==='articulos' ? agg.articulos : agg.tickets;
@@ -3721,7 +3728,7 @@ function renderPlanCard(p){
           const oc = planObjCompare(activeStoreId, p);
           if(oc){
             const okc = oc.real>=oc.obj; const ocol = okc?'var(--green)':(oc.real/oc.obj>=0.85?'var(--amber)':'var(--red)');
-            liveRow = `<div class="meta" style="margin-top:2px;"><span style="color:${ocol};font-weight:700;">Vendido en los ${oc.days} día(s) cargados del plan: ${escapeHtml(oc.realText)} vs objetivo de esos días ${escapeHtml(oc.objText)} ${okc?'▲':'▼'} (${varStr(oc.pct)})</span><span style="color:var(--muted);">suma desde el ${p.createdAt.split('-').reverse().join('/')} hasta hoy</span></div>`;
+            liveRow = `<div class="meta" style="margin-top:2px;"><span style="color:${ocol};font-weight:700;">Vendido en los ${oc.days} día(s) cargados del plan: ${escapeHtml(oc.realText)} vs objetivo de esos días ${escapeHtml(oc.objText)} ${okc?'▲':'▼'} (${varStr(oc.pct)})</span><span style="color:var(--muted);">suma de la meta diaria de la planilla desde el ${p.createdAt.split('-').reverse().join('/')} hasta hoy</span></div>`;
           } else if(live){
             let liveColor = 'var(--ink-soft)', liveArrow = '';
             if(isTk){
