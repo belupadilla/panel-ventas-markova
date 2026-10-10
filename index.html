@@ -503,11 +503,13 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 16:40</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 17:45</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
+    <label class="sidebtn" for="mergeFile" style="text-align:center;cursor:pointer;display:block;" title="Agrega lo que falta del archivo sin borrar nada de lo que ya está cargado">Combinar respaldo (sin borrar)</label>
+    <input type="file" id="mergeFile" accept=".json,application/json" hidden>
   </div>
 
   <div class="main">
@@ -667,7 +669,7 @@ function vsObj(pct){ return varStr(pct-100); }
 
 
 // ---- Persistencia compartida (db) con respaldo local ----
-let DB=null, canWrite=true, lastSaved={}, writeChain=Promise.resolve(), remoteDeferred=false;
+let DB=null, canWrite=true, lastSaved={}, writeChain=Promise.resolve(), remoteDeferred=false, pendingWrites=0;
 const COLS=['stores','entries','fin','plans'];
 const snaps={stores:{},entries:{},fin:{},plans:{}};
 function normalizeState(){
@@ -701,9 +703,10 @@ function isTyping(){ const a=document.activeElement; return a && (/^(INPUT|TEXTA
 function applyRemote(){
   const st=stateFromSnaps();
   if(JSON.stringify(st)===JSON.stringify(state)) return;
+  if(pendingWrites>0){ remoteDeferred=true; return; } // hay cambios propios sin terminar de guardar: no pisarlos con datos viejos
   if(isTyping()){ remoteDeferred=true; setSync('Hay cambios nuevos de otra persona. Se actualizan al terminar de escribir.','warn'); return; }
   remoteDeferred=false;
-  state=st; normalizeState();
+  state=st; normalizeState(); markBase(state);
   if(!state.stores.find(x=>x.id===activeStoreId)) activeStoreId = state.stores[0]?state.stores[0].id:null;
   setSync('Sincronizado','ok');
   render();
@@ -1700,29 +1703,59 @@ async function loadState(){
   } else {
     try{ const raw=localStorage.getItem(STORAGE_KEY); if(raw) state=JSON.parse(raw); }catch(e){}
   }
-  normalizeState();
+  normalizeState(); markBase(state);
   setSync(ok ? (canWrite?'Sincronizado':'Solo lectura') : 'Modo local (no compartido)', ok?(canWrite?'ok':'warn'):'warn');
   if(state.stores.length && !activeStoreId) activeStoreId = state.stores[0].id;
   if(autoCloseOverduePlans()) await saveState();
+}
+
+// Guardado sin pisar a otras personas: para listas por local (entries / plans) se une por id lo que cambió acá con lo último que hay en la base
+let baseSaved={};
+function markBase(st){ try{ const d=docsFromState(st); baseSaved={}; Object.keys(d).forEach(p=>{ baseSaved[p]=JSON.stringify(d[p]); }); }catch(e){} }
+function mergeById(base, local, remote){
+  const key=x=>x&&x.id; const bm=new Map((base||[]).map(x=>[key(x),JSON.stringify(x)]));
+  const lm=new Map((local||[]).map(x=>[key(x),x])); const rm=new Map((remote||[]).map(x=>[key(x),x]));
+  const out=[]; const seen=new Set();
+  (remote||[]).forEach(r=>{ const id=key(r); seen.add(id);
+    if(lm.has(id)){ const l=lm.get(id); out.push((bm.get(id)!==JSON.stringify(l)) ? l : r); }       // cambió acá → gana lo local; si no, lo de la base
+    else if(bm.has(id)){ /* lo borraron acá → se quita */ }
+    else out.push(r);                                                                                 // lo agregó otra persona → se conserva
+  });
+  (local||[]).forEach(l=>{ const id=key(l); if(!seen.has(id) && !bm.has(id)) out.push(l); });          // nuevo acá
+  return out;
+}
+function mergedDoc(p, localDoc){
+  try{
+    const [col,id]=p.split('/'); if(col!=='entries' && col!=='plans') return localDoc;
+    if(!baseSaved[p] || !snaps[col] || !snaps[col][id]) return localDoc;
+    const base=JSON.parse(baseSaved[p]).list, remote=snaps[col][id].list;
+    if(!Array.isArray(base)||!Array.isArray(remote)) return localDoc;
+    return { list: mergeById(base, localDoc.list, remote) };
+  }catch(e){ return localDoc; }
 }
 async function saveState(){
   try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
   if(!DB) return;
   if(!canWrite){ showToast('Tu acceso es de solo lectura. Pedí permiso de edición.'); return; }
   const docs=docsFromState(state);
+  Object.keys(docs).forEach(p=>{ docs[p]=mergedDoc(p, docs[p]); });
   const jobs=[];
   Object.keys(docs).forEach(p=>{ const j=JSON.stringify(docs[p]); if(lastSaved[p]!==j){ lastSaved[p]=j; jobs.push(['set',p,docs[p]]); } });
   Object.keys(lastSaved).forEach(p=>{ if(!docs[p] && COLS.includes(p.split('/')[0])){ delete lastSaved[p]; jobs.push(['del',p]); } });
   if(!jobs.length) return;
   setSync('Guardando…','warn');
+  pendingWrites++;
   writeChain = writeChain.then(async()=>{
     try{
-      for(const j of jobs){ const [c,id]=j[1].split('/'); const ref=DB.collection(c).doc(id); if(j[0]==='set') await ref.set(j[2]); else await ref.delete(); }
+      for(const j of jobs){ const [c,id]=j[1].split('/'); const ref=DB.collection(c).doc(id); if(j[0]==='set') await ref.set(mergedDoc(j[1], j[2])); else await ref.delete(); }
       setSync('Guardado','ok');
     }catch(e){
       if(e && e.code==='invalid_argument'){ canWrite=false; setSync('Solo lectura','warn'); showToast('No tenés permiso para editar estos datos.'); }
       else { setSync('No se pudo guardar','err'); showToast('Error al guardar. Reintentá en unos segundos.'); }
       jobs.forEach(j=>{ delete lastSaved[j[1]]; });
+    } finally {
+      pendingWrites--;
+      if(pendingWrites===0 && remoteDeferred) setTimeout(()=>{ if(!isTyping()) applyRemote(); },300);
     }
   });
   return writeChain;
@@ -1736,6 +1769,34 @@ function exportBackup(){
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
     showToast('Respaldo descargado.');
   }catch(e){ showToast('No se pudo generar el respaldo.'); }
+}
+async function mergeBackup(file){
+  try{
+    const obj=JSON.parse(await file.text());
+    if(!obj || !Array.isArray(obj.stores)) throw new Error('formato');
+    const has=e=>e && ((e.sales||0)>0 || (e.articulos||0)>0 || (e.tickets||0)>0);
+    let addedDays=0, filledDays=0, addedPlans=0, addedMonths=0;
+    obj.stores.forEach(fs=>{
+      const cur=state.stores.find(x=>x.id===fs.id); if(!cur) return;             // solo locales que ya existen
+      const id=fs.id;
+      const mine=(state.entries[id]=state.entries[id]||[]);
+      ((obj.entries||{})[id]||[]).forEach(fe=>{
+        const m=mine.find(x=>x.date===fe.date);
+        if(!m){ mine.push(fe); addedDays++; }
+        else if(!has(m) && has(fe)){ ['sales','articulos','tickets'].forEach(k=>{ m[k]=fe[k]; }); if(!m.meta && fe.meta) m.meta=fe.meta; filledDays++; }
+        else if(!m.meta && fe.meta){ m.meta=fe.meta; }
+      });
+      mine.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+      const fc=(state.forecasts[id]=state.forecasts[id]||{});
+      Object.keys((obj.forecasts||{})[id]||{}).forEach(mo=>{ if(!fc[mo]){ fc[mo]=obj.forecasts[id][mo]; addedMonths++; } });
+      const py=(state.priorYear[id]=state.priorYear[id]||{});
+      Object.keys((obj.priorYear||{})[id]||{}).forEach(mo=>{ if(!py[mo]) py[mo]=obj.priorYear[id][mo]; });
+      const pl=(state.plans[id]=state.plans[id]||[]);
+      ((obj.plans||{})[id]||[]).forEach(fp=>{ if(!pl.find(x=>x.id===fp.id)){ pl.push(fp); addedPlans++; } });
+    });
+    normalizeState(); await saveState(); render();
+    showToast('Combinado: '+addedDays+' días nuevos, '+filledDays+' días completados, '+addedMonths+' pronósticos y '+addedPlans+' planes agregados. No se borró nada.');
+  }catch(e){ showToast('El archivo no es un respaldo válido de Markova.'); }
 }
 async function importBackup(file){
   try{
@@ -4337,6 +4398,7 @@ document.addEventListener('keydown', function(e){
   }
 });
 
+document.getElementById('mergeFile').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) mergeBackup(f); e.target.value=''; });
 document.getElementById('importFile').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) importBackup(f); e.target.value=''; });
 (async function init(){ await loadState(); if(state.stores.length) overviewMode = true; render(); })();
 </script>
