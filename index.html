@@ -503,7 +503,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 18:00</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 18:10</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -1458,7 +1458,7 @@ function xeRecalc(onlyMissing){
     const ws = shOf(sh); const cell = ws ? ws.findCell(r,c) : null;
     const f = xeFormulaOf(cell);
     if(!f){ const pv = xeCellPlain(cell); cache.set(k,pv); return pv; }
-    if(onlyMissing){ const cur = xeCellPlain(cell); if(cur!==null && cur!==undefined){ cache.set(k,cur); return cur; } }
+    if(onlyMissing){ const cur = xeCellPlain(cell); const isErr = typeof cur==='string' && /^#(VALUE|REF|DIV\/0|NAME\?|N\/A|NUM|NULL|ERROR)[!?]?$/i.test(cur); if(cur!==null && cur!==undefined && !isErr){ cache.set(k,cur); return cur; } }
     if(busy.has(k)) return { error:'#REF!' };
     busy.add(k);
     let res; const parser = getParser(); depth++;
