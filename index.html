@@ -405,6 +405,10 @@
   .overview-card{border-radius:12px;padding:16px 18px;}
   .overview-card:hover{border-color:var(--border-strong);box-shadow:0 1px 3px rgba(20,30,40,.06);}
   .overview-card .ov-name{font-weight:600;}
+  .ov-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px;}
+  .ov-grid .overview-card{margin-bottom:0;padding:9px 14px;border-radius:10px;}
+  .ov-grid .overview-card .ov-name{font-size:13px;}
+  .ov-grid .overview-card .ov-stats{font-size:12px;gap:10px;}
   .toast{border-radius:10px;font-weight:600;}
   .sync{background:var(--hover-bg);border-radius:8px;}
   .gatebox{border-radius:16px;}
@@ -481,7 +485,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 15:10</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 15:25</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -3876,7 +3880,7 @@ function renderProgresoLocales(){
             ${progressRingHtml('Crecimiento', sm.crecimientoPct, sm.expAntImporte>0, sm.expAntImporte>0 ? 'vs. mismo período año anterior' : 'Cargá el año anterior en Vista mensual', 56, sm.expAntImporte>0?varStr(sm.crecimientoPct-100):undefined)}
           </div>
         </div>
-      `).join('') : `<div class="empty" style="padding:30px 0;font-size:14px;">Todavía no agregaste locales.</div>`}
+      `).join('') + '</div>' : `<div class="empty" style="padding:30px 0;font-size:14px;">Todavía no agregaste locales.</div>`}
     </section>
   `;
   const pms = document.getElementById('progresoMonthSelect');
@@ -3922,7 +3926,7 @@ function renderOverview(){
   content.innerHTML = `
     <section class="panel">
       <h2>Locales <span class="n">${state.stores.length}</span></h2>
-      ${storeSummaries.length ? storeSummaries.map(sm=>`
+      ${storeSummaries.length ? '<div class="ov-grid">' + storeSummaries.map(sm=>`
         <div class="overview-card" data-store="${sm.store.id}">
           <div class="ov-name">${escapeHtml(sm.store.name)}</div>
           <div class="ov-stats">
