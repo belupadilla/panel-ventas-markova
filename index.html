@@ -405,10 +405,14 @@
   .overview-card{border-radius:12px;padding:16px 18px;}
   .overview-card:hover{border-color:var(--border-strong);box-shadow:0 1px 3px rgba(20,30,40,.06);}
   .overview-card .ov-name{font-weight:600;}
-  .ov-grid{display:block;}
-  .ov-grid .overview-card{margin-bottom:5px;padding:7px 14px;border-radius:10px;}
-  .ov-grid .overview-card .ov-name{font-size:12.5px;}
+  .ov-grid{display:block;max-width:440px;}
+  .ov-grid .overview-card{margin-bottom:3px;padding:5px 12px;border-radius:8px;justify-content:flex-start;gap:14px;}
+  .ov-grid .overview-card .ov-name{font-size:12.5px;min-width:96px;}
   .ov-grid .overview-card .ov-stats{font-size:11.5px;gap:10px;}
+  .ov-grid + *{margin-top:0;}
+  section.panel{padding:18px 22px;margin-bottom:14px;}
+  section.panel h2{margin-bottom:10px;}
+  .pagehead{margin-bottom:14px;}
   .toast{border-radius:10px;font-weight:600;}
   .sync{background:var(--hover-bg);border-radius:8px;}
   .gatebox{border-radius:16px;}
@@ -485,7 +489,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 15:40</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 16:10</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
