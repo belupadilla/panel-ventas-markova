@@ -411,6 +411,15 @@
   .sheet-box{border-radius:16px;}
   .att-item{border-radius:10px;}
   @media (max-width:900px){ .main{padding:22px 18px 60px;} .pagehead h1{font-size:30px;} }
+  .kpi-row{grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px;}
+  .kpi{min-width:0;display:flex;flex-direction:column;}
+  .kpi .label{min-height:2.7em;display:flex;align-items:flex-start;line-height:1.3;}
+  .kpi .value{font-size:clamp(20px,1.9vw,26px);white-space:nowrap;line-height:1.2;}
+  .kpi .value.small{font-size:clamp(19px,1.7vw,22px);}
+  .kpi .note{overflow-wrap:anywhere;}
+  .kpi-row.compact{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));}
+  .kpi-row.compact .label{min-height:0;}
+  .kpi-row.compact .value{font-size:15px;}
   /* ---- Editor de texto con formato ---- */
   .rt-bar{gap:4px;padding:8px 10px;background:#fafbfc;border:1px solid var(--border);border-bottom:0;border-radius:12px 12px 0 0;}
   .rt-bar select{border:1px solid var(--border);border-radius:8px;padding:6px 8px;font-size:12.5px;color:var(--ink-soft);background:#fff;height:30px;}
@@ -461,7 +470,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 11:52</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 12:05</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
