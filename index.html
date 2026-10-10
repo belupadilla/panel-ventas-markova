@@ -1190,12 +1190,14 @@ function xlColor(c){
   return null;
 }
 const XL_BORDER = { thin:'1px solid', medium:'2px solid', thick:'3px solid', dashed:'1px dashed', dotted:'1px dotted', hair:'1px dotted', double:'3px double', mediumDashed:'2px dashed', dashDot:'1px dashed', mediumDashDot:'2px dashed', dashDotDot:'1px dashed', mediumDashDotDot:'2px dashed', slantDashDot:'1px dashed' };
+// ExcelJS omite result=0 en cell.value; el modelo interno sí lo conserva (y lo guarda al exportar)
+function xeResOf(cell,v){ let r = v ? v.result : undefined; if(r===undefined && cell && cell.model && cell.model.result!==undefined) r = cell.model.result; return r; }
 function xlRaw(cell){
   if(!cell) return { v:null, fx:false };
   const v = cell.value;
   if(v===null || v===undefined) return { v:null, fx:false };
   if(typeof v==='object' && !(v instanceof Date)){
-    if(v.formula!==undefined || v.sharedFormula!==undefined){ const r=v.result; return { v:(r===undefined?null:r), fx:true, f:(v.formula||v.sharedFormula||'') }; }
+    if(v.formula!==undefined || v.sharedFormula!==undefined){ const r=xeResOf(cell,v); return { v:(r===undefined?null:r), fx:true, f:(v.formula||v.sharedFormula||'') }; }
     if(v.richText) return { v:v.richText.map(t=>t.text).join(''), fx:false };
     if(v.error) return { v:v.error, fx:false };
     if(v.text!==undefined) return { v:String(v.text), fx:false };
@@ -1350,12 +1352,43 @@ function xeCellPlain(cell){
   if(v===null || v===undefined) return null;
   if(v instanceof Date) return xlSerial(v);
   if(typeof v==='object'){
-    if(v.formula!==undefined || v.sharedFormula!==undefined){ const r=v.result; if(r instanceof Date) return xlSerial(r); if(r && typeof r==='object' && r.error) return r.error; return r===undefined?null:r; }
+    if(v.formula!==undefined || v.sharedFormula!==undefined){ const r=xeResOf(cell,v); if(r instanceof Date) return xlSerial(r); if(r && typeof r==='object' && r.error) return r.error; return r===undefined?null:r; }
     if(v.richText) return v.richText.map(t=>t.text).join('');
     if(v.error) return v.error;
     if(v.text!==undefined) return String(v.text);
   }
   return v;
+}
+// Excel considera que una celda vacía es igual a "" (el motor la trataba como 0): se reescribe  A1<>"" y A1="" se reescriben para que una celda vacía cuente como ""
+function xePrep(f){
+  const ref = "((?:(?:'[^']+'|[A-Za-z0-9_]+)!)?\\$?[A-Z]{1,3}\\$?\\d+)(?![\\d(:])";
+  return String(f)
+    .replace(new RegExp(ref+'\\s*<>\\s*""','g'), 'IF(ISBLANK($1),FALSE,$1<>"")')
+    .replace(new RegExp(ref+'\\s*(?<![<>])=\\s*""','g'), 'IF(ISBLANK($1),TRUE,$1="")');
+}
+// SUMPRODUCT con operaciones entre rangos, ej.: SUMPRODUCT((D8:D16<>"")*B8:B16): se evalúa fila a fila
+function xeSumproductParts(f){
+  const m = /^\s*SUMPRODUCT\s*\(([\s\S]*)\)\s*$/i.exec(f); if(!m) return null;
+  const inner = m[1]; let depth=0, q=false;
+  for(let i=0;i<inner.length;i++){ const ch=inner[i]; if(ch==='"') q=!q; if(q) continue; if(ch==='(') depth++; else if(ch===')'){ depth--; if(depth<0) return null; } else if((ch===','||ch===';') && depth===0) return null; }
+  const rg = /((?:'[^']+'|[A-Za-z0-9_]+)!)?\$?([A-Z]{1,3})\$?(\d+):\$?([A-Z]{1,3})\$?(\d+)/g;
+  const ranges = []; let mm;
+  while((mm = rg.exec(inner))){ ranges.push({ full:mm[0], sh:mm[1]||'', c1:mm[2], r1:+mm[3], c2:mm[4], r2:+mm[5] }); }
+  if(!ranges.length) return null;
+  const colN = x=>{ let n=0; for(const ch of x) n = n*26 + (ch.charCodeAt(0)-64); return n; };
+  const colL = n=>{ let s=''; while(n>0){ const r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=Math.floor((n-1)/26); } return s; };
+  const first = ranges[0]; const vertical = first.c1===first.c2;
+  const len = vertical ? (first.r2-first.r1+1) : (colN(first.c2)-colN(first.c1)+1);
+  const out = [];
+  for(let k=0;k<len;k++){
+    let t = inner;
+    ranges.forEach(rr=>{
+      const ref = vertical ? (rr.c1 + (rr.r1+k)) : (colL(colN(rr.c1)+k) + rr.r1);
+      t = t.split(rr.full).join(rr.sh + ref);
+    });
+    out.push(t);
+  }
+  return out;
 }
 // Recalcula todas las fórmulas del libro. onlyMissing=true: solo las que no traen resultado guardado.
 function xeRecalc(onlyMissing){
@@ -1363,7 +1396,9 @@ function xeRecalc(onlyMissing){
   const wb = ED.wb; const cache = new Map(); const busy = new Set(); let changed = 0;
   const key = (sh,r,c)=>sh+'!'+r+':'+c;
   const shOf = n=>{ try{ return wb.getWorksheet(n); }catch(e){ return null; } };
-  let parser;
+  const cfg = {};
+  const pool = []; let depth = 0;
+  const getParser = ()=>{ if(!pool[depth]) pool[depth] = new FormulaParser(cfg); return pool[depth]; };
   const evalCell = (sh, r, c)=>{
     const k = key(sh,r,c);
     if(cache.has(k)) return cache.get(k);
@@ -1373,17 +1408,30 @@ function xeRecalc(onlyMissing){
     if(onlyMissing){ const cur = xeCellPlain(cell); if(cur!==null && cur!==undefined){ cache.set(k,cur); return cur; } }
     if(busy.has(k)) return { error:'#REF!' };
     busy.add(k);
-    let res;
+    let res; const parser = getParser(); depth++;
     try{
-      res = parser.parse(f, { sheet:sh, row:r, col:c });
-      if(Array.isArray(res)) res = Array.isArray(res[0]) ? res[0][0] : res[0];
+      const sp = xeSumproductParts(f);
+      if(sp){
+        let tot = 0, err = null;
+        for(const part of sp){
+          let v = parser.parse(xePrep(part), { sheet:sh, row:r, col:c });
+          if(Array.isArray(v)) v = Array.isArray(v[0]) ? v[0][0] : v[0];
+          if(v && typeof v==='object' && v.error!==undefined){ err = v; break; }
+          if(typeof v==='boolean') v = v?1:0;
+          if(typeof v==='number' && isFinite(v)) tot += v;
+        }
+        res = err || tot;
+      } else {
+        res = parser.parse(xePrep(f), { sheet:sh, row:r, col:c });
+        if(Array.isArray(res)) res = Array.isArray(res[0]) ? res[0][0] : res[0];
+      }
     }catch(e){ res = (e && e.error) ? e : undefined; }
-    busy.delete(k);
+    depth--; busy.delete(k);
     if(res===undefined || res===null) res = (res===null ? 0 : undefined);
     if(res && typeof res==='object' && !(res instanceof Date) && res.error===undefined && res.message!==undefined) res = { error:'#VALUE!' };
     if(res!==undefined){
       const store = (res && typeof res==='object' && res.error!==undefined) ? { error:String(res.error) } : res;
-      const prev = cell.value && cell.value.result;
+      const prev = xeResOf(cell, cell.value);
       const same = (prev===store) || (prev && store && typeof prev==='object' && typeof store==='object' && prev.error===store.error);
       if(!same){
         const mod = cell.value;
@@ -1396,7 +1444,7 @@ function xeRecalc(onlyMissing){
     }
     const old = xeCellPlain(cell); cache.set(k, old); return old;
   };
-  parser = new FormulaParser({
+  Object.assign(cfg, {
     onCell: ref=>evalCell(ref.sheet, ref.row, ref.col),
     onRange: ref=>{
       const out = [];
