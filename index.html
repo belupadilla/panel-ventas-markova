@@ -481,7 +481,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 14:05</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 14:25</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -2211,7 +2211,7 @@ function renderDailyView(){
         <div class="value">${monthlyForecast.importe>0 ? fmtMoney(monthlyForecast.importe) : '— sin cargar —'}</div>
         <div class="note">${MONTH_NAMES[Number(displayedMonthKey.slice(5,7))-1]} ${displayedMonthKey.slice(0,4)}${monthlyForecast.importe>0 ? '' : ' · cargalo en Vista mensual'}</div>
       </div>
-      <div class="kpi"><div class="label">Venta del período</div><div class="value" id="kpiImporte">${fmtMoney(agg.sales)}</div><div class="note" id="kpiImporteNote">${loadedDays} día(s) cargado(s) de ${rangeEntries.length} · (${rangeLabel})${fc.importe>0?`<br>Objetivo de esos días: <strong>${fmtMoney(fc.importe)}</strong>`:''}</div></div>
+      <div class="kpi"><div class="label">Venta del período</div><div class="value" id="kpiImporte">${fmtMoney(agg.sales)}</div><div class="note" id="kpiImporteNote">${loadedDays} día(s) cargado(s) de ${rangeEntries.length} · (${rangeLabel})</div></div>
       <div class="kpi ${statusClass(cumMeta, agg.meta>0)}" id="kpiCumMetaCard">
         <div class="label">Cumplimiento vs. Meta diaria</div>
         <div class="value small" id="kpiCumMeta">${agg.meta>0? vsObj(cumMeta) : (hasAnyMetaLoaded ? '— sin ventas cargadas —' : '— sin metas cargadas —')}</div>
@@ -2507,7 +2507,7 @@ function recomputeTotals(){
   const loadedDays = rangeEntries.filter(e=>e.sales!==null && e.sales!==undefined).length;
   const setText = (id,txt)=>{ const el=document.getElementById(id); if(el) el.textContent = txt; };
   setText('kpiImporte', fmtMoney(agg.sales));
-  { const n=document.getElementById('kpiImporteNote'); if(n) n.innerHTML = `${loadedDays} día(s) cargado(s) de ${rangeEntries.length}` + (fc.importe>0 ? `<br>Objetivo de esos días: <strong>${fmtMoney(fc.importe)}</strong>` : ''); }
+  setText('kpiImporteNote', `${loadedDays} día(s) cargado(s) de ${rangeEntries.length}`);
   setText('kpiCumMeta', agg.meta>0? vsObj(cumMeta) : (hasAnyMetaLoaded ? '— sin ventas cargadas —' : '— sin metas cargadas —'));
   setText('kpiCumMetaNote', agg.meta>0? 'Meta acumulada (días cargados): '+fmtMoney(agg.meta) : (hasAnyMetaLoaded ? 'Ya tenés metas cargadas — falta completar la venta real de esos días en la planilla' : 'Se completa a medida que cargás días con meta'));
   setText('kpiCumPron', fc.importe>0? vsObj(ritmoPct) : '— sin pronóstico —');
