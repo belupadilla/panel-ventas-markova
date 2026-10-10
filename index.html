@@ -481,7 +481,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 14:25</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 14:50</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -1607,30 +1607,22 @@ function daysOfRangeInMonth(start, end, mKey){
   return daysBetweenInclusive(rs, re);
 }
 function dayObjectiveWeights(storeId, m){
-  // Objetivo de venta de cada día del mes según la meta diaria de la grilla; los días sin meta se completan
-  // repartiendo parejo lo que falta del objetivo mensual. Devuelve null si la grilla no tiene metas en ese mes.
+  // Objetivo de venta de cada día del mes = meta diaria que cargó el local en la grilla.
+  // Los días sin meta cargada NO se completan: cuentan 0 (el panel nunca inventa metas).
   const totalDays = lastDayOfMonth(m);
-  const metaByDate = {}; let metaMonth = 0;
-  entriesForStore(storeId).forEach(e=>{ if(e.date.slice(0,7)===m && Number(e.meta)>0 && metaByDate[e.date]===undefined){ metaByDate[e.date]=Number(e.meta); metaMonth+=Number(e.meta); } });
-  const nMeta = Object.keys(metaByDate).length;
-  if(!nMeta) return null;
-  const fc = getForecast(storeId, m).importe||0;
-  const missing = totalDays - nMeta;
-  const perMissing = missing>0 ? Math.max(0, (fc - metaMonth)/missing) : 0;
-  const w = {}; let tot = 0;
-  for(let d=1; d<=totalDays; d++){
-    const iso = m+'-'+String(d).padStart(2,'0');
-    w[iso] = metaByDate[iso]!==undefined ? metaByDate[iso] : perMissing; tot += w[iso];
-  }
-  return {w, tot};
+  const w = {}; let tot = 0, n = 0;
+  for(let d=1; d<=totalDays; d++) w[m+'-'+String(d).padStart(2,'0')] = 0;
+  entriesForStore(storeId).forEach(e=>{ if(e.date.slice(0,7)===m && Number(e.meta)>0 && w[e.date]===0){ w[e.date]=Number(e.meta); tot+=Number(e.meta); n++; } });
+  return n ? {w, tot, n} : null;
 }
 function dayObjective(storeId, iso, field){
-  // Objetivo de un día para venta (importe), artículos o tickets, siguiendo el peso de ese día en la grilla
+  // Objetivo de un día: venta = meta de la grilla; artículos/tickets = mismo peso del día aplicado al objetivo mensual
   const m = iso.slice(0,7); const f = getForecast(storeId, m);
   const dw = dayObjectiveWeights(storeId, m);
-  if(!dw || !(dw.tot>0)) return (f[field]||0)/lastDayOfMonth(m);
-  if(field==='importe') return dw.w[iso];
-  return (f[field]||0) * dw.w[iso]/dw.tot;
+  const wd = dw ? dw.w[iso] : 0;
+  if(!(wd>0)) return 0;
+  if(field==='importe') return wd;
+  return (f.importe>0) ? (f[field]||0)*wd/f.importe : 0;
 }
 function expectedForRange(storeId, start, end, source, field){
   let total = 0;
@@ -1640,17 +1632,20 @@ function expectedForRange(storeId, start, end, source, field){
     const totalDays = lastDayOfMonth(m);
     const obj = source==='forecast' ? getForecast(storeId, m) : getAnt(storeId, m);
     if(source==='forecast' && daysInRange<totalDays){
-      const dw = dayObjectiveWeights(storeId, m);
-      if(dw && dw.tot>0){
-        let sum = 0;
-        Object.keys(dw.w).forEach(iso=>{ if(iso>=start && iso<=end) sum += dw.w[iso]; });
-        total += field==='importe' ? sum : (obj[field]||0)*sum/dw.tot;
-        return;
-      }
+      // Rango parcial: suma de las metas de la grilla de esos días (solo los que tienen meta cargada)
+      Object.keys(dayObjectiveWeights(storeId, m)?.w || {}).forEach(iso=>{ if(iso>=start && iso<=end) total += dayObjective(storeId, iso, field); });
+      return;
     }
     total += (obj[field]||0) * daysInRange/totalDays;
   });
   return total;
+}
+function missingMetaDays(storeId, start, end){
+  const today = todayISO(); const last = end<today ? end : today;
+  const have = new Set(entriesInRange(storeId, start, last).filter(e=>Number(e.meta)>0).map(e=>e.date));
+  const out = []; let d = start;
+  while(d<=last){ if(!have.has(d)) out.push(d); d = addDaysISO(d, 1); }
+  return out;
 }
 let lastActiveStoreForRange = null;
 function ensureRange(){
@@ -2117,7 +2112,9 @@ function attachNoteHandlers(root){
 function alertsPanelHtml(storeId){
   const alerts = computeAlerts(storeId);
   const notes = unreadNotes(storeId);
-  const notesHtml = newPlans(storeId).map(p=>newPlanAlertHtml(storeId,p)).join('') + noFollowUpPlans(storeId).map(n=>noFollowAlertHtml(storeId,n)).join('') + notes.map(n=>noteAlertHtml(storeId,n,false)).join('');
+  const mm = missingMetaDays(storeId, rangeStart, rangeEnd);
+  const metaMissHtml = mm.length ? `<div class="alert warn"><span class="dot"></span><div class="body"><div class="title">Faltan metas diarias en la planilla</div><div class="detail">${mm.length} día(s) del período no tienen meta cargada (${mm.slice(0,6).map(d=>d.split('-').reverse().slice(0,2).join('/')).join(', ')}${mm.length>6?'…':''}). El objetivo y los planes se calculan solo con los días que tienen meta: completala en la planilla para que los números sean exactos.</div></div></div>` : '';
+  const notesHtml = metaMissHtml + newPlans(storeId).map(p=>newPlanAlertHtml(storeId,p)).join('') + noFollowUpPlans(storeId).map(n=>noFollowAlertHtml(storeId,n)).join('') + notes.map(n=>noteAlertHtml(storeId,n,false)).join('');
   let inner;
   if(!alerts.length){
     inner = notesHtml + `<div class="allgood">✓ Sin alertas activas en el período seleccionado.</div>`;
@@ -3028,7 +3025,7 @@ function planObjCompare(storeId, p, upToDate){
   let end = (upToDate && upToDate<today) ? upToDate : today;
   if(p.targetDate && p.targetDate<end) end = p.targetDate;
   if(end<p.createdAt) return null;
-  const ents = entriesInRange(storeId, p.createdAt, end).filter(e=>e.sales!==null && e.sales!==undefined);
+  const ents = entriesInRange(storeId, p.createdAt, end).filter(e=>e.sales!==null && e.sales!==undefined && Number(e.meta)>0);
   if(!ents.length) return null;
   let obj = 0;
   // Objetivo de cada día según la grilla (para artículos y tickets, el mismo peso diario aplicado al objetivo mensual)
