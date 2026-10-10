@@ -503,7 +503,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 16:10</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 16:40</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -1248,7 +1248,7 @@ function xlCellStyle(cell, raw){
     dv.push('text-align:'+h);
     td.push('vertical-align:'+(al.vertical==='top'?'top':(al.vertical==='middle'||al.vertical==='center')?'middle':'bottom'));
     if(al.indent) dv.push('padding-left:'+(4+al.indent*8)+'px');
-    dv.push(al.wrapText ? 'white-space:pre-wrap;word-break:break-word' : 'white-space:pre;text-overflow:clip');
+    dv.push(al.wrapText ? 'white-space:pre-wrap;word-break:normal;overflow-wrap:normal' : 'white-space:pre;text-overflow:clip');
     if(al.textRotation===90||al.textRotation===255) {}
   } else {
     td.push('vertical-align:bottom'); dv.push('white-space:pre');
@@ -1269,6 +1269,33 @@ function xeCellInner(r, c){
   const txt = xlText(rw.v, cell && cell.numFmt);
   const st = xlCellStyle(cell, rw.v);
   return { txt, st, fx:rw.fx, f:rw.f };
+}
+// Ajusta SOLO la vista: ensancha lo necesario cada columna para que se lea completo lo escrito (no modifica el archivo)
+function xeFitCols(grid, nC){
+  try{
+    const cv = document.createElement('canvas').getContext('2d');
+    const need = [];
+    grid.querySelectorAll('td[data-c]').forEach(td=>{
+      if(td.colSpan>1) return;
+      const dv = td.firstElementChild; if(!dv) return;
+      const t = dv.textContent; if(!t) return;
+      const cs = getComputedStyle(dv);
+      cv.font = cs.fontStyle+' '+cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily;
+      const wrap = (cs.whiteSpace||'').indexOf('wrap')>=0;
+      let w = 0;
+      if(wrap){ t.split(/\s+/).forEach(x=>{ w = Math.max(w, cv.measureText(x).width); }); }
+      else if(td.getAttribute('data-num')==='1' || /^[-+$€%\s\d.,()/:]+$/.test(t)){ w = cv.measureText(t).width; }
+      else return;
+      const c = Number(td.dataset.c);
+      need[c] = Math.max(need[c]||0, Math.ceil(w)+12);
+    });
+    need.forEach((w,c)=>{
+      if(!w) return;
+      const col = grid.querySelector('col[data-c="'+c+'"]'); if(!col) return;
+      const cur = parseFloat(col.style.width)||0; if(cur===0) return;
+      if(w>cur) col.style.width = Math.min(w, 320)+'px';
+    });
+  }catch(e){}
 }
 function xeRender(){
   const ws = ED.ws; const { nR, nC } = xeDims();
@@ -1300,13 +1327,13 @@ function xeRender(){
       const it = xeCellInner(r,c);
       const edc = (ED.editedSet && ED.editedSet.has(r+','+c)) ? ' ed' : '';
       const sel = (ED.sel && ED.sel.r===r && ED.sel.c===c) ? ' sel' : '';
-      const maxH = ri.fixed ? 'max-height:'+(ri.px-1)+'px;overflow:hidden;' : '';
+      const maxH = '';
       h += '<td data-r="'+r+'" data-c="'+c+'" class="'+(it.fx?'fx':'')+edc+sel+'"'+(m?' rowspan="'+m.rs+'" colspan="'+m.cs+'"':'')+' style="'+it.st.td+(colHidden[c]?';display:none':'')+'"'+(it.fx?' title="Fórmula: ='+escapeHtml(String(it.f))+'"':'')+'><div class="xv" style="'+maxH+it.st.dv+'">'+escapeHtml(it.txt)+'</div></td>';
     }
     h += '</tr>';
   }
   h += '</tbody></table>';
-  grid.innerHTML = h; grid.scrollTop = prevScroll;
+  grid.innerHTML = h; xeFitCols(grid, nC); grid.scrollTop = prevScroll;
   grid.onscroll = ()=>{
     if(ED && ED.x && ED.shown < xeDims().nR && grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 250){ ED.shown += ED_BATCH; xeRender(); }
   };
@@ -1315,7 +1342,7 @@ function xeRender(){
   grid.querySelectorAll('th.rn[data-r]').forEach(t=>t.addEventListener('click', e=>{ if(e.target.classList.contains('row-rz')) return; xeCommit(); ED.sel={ r:Number(t.dataset.r), c:(ED.sel?ED.sel.c:0) }; edSelLabel(); }));
   grid.querySelectorAll('.col-rz').forEach(hd=>hd.addEventListener('mousedown', e=>{
     e.preventDefault(); e.stopPropagation();
-    const c = Number(hd.dataset.c); const col = grid.querySelector('col[data-c="'+c+'"]'); const startX = e.clientX; const startW = xeColPx(ws,c);
+    const c = Number(hd.dataset.c); const col = grid.querySelector('col[data-c="'+c+'"]'); const startX = e.clientX; const startW = col.offsetWidth || xeColPx(ws,c);
     const mv = ev=>{ col.style.width = Math.max(24,startW+ev.clientX-startX)+'px'; };
     const up = ev=>{ document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up); const w=Math.max(24,startW+ev.clientX-startX); ws.getColumn(c+1).width = (w-5)/7; ED.dirty=true; };
     document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up);
