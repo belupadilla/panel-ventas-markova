@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Panel de Ventas Markova</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Instrument+Serif&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -329,6 +329,117 @@
   .row-rz:hover{background:var(--blue);opacity:.5}
   .sheet-scroll th.rn{position:sticky;left:0;min-width:42px;width:42px}
   .sheet-scroll th{position:sticky}
+
+  /* ===== Tema limpio (vista previa) ===== */
+  :root{
+    --bg:#f5f6f7; --card:#ffffff; --border:#e8eaed; --border-strong:#d6dbe1;
+    --ink:#17202b; --ink-soft:#57626e; --muted:#8d97a3;
+    --green:#2e9e48; --green-soft:#eaf6ed;
+    --amber:#e08a2e; --amber-soft:#fdf1e2;
+    --red:#e0554a; --red-soft:#fcebe9;
+    --blue:#3b6ea5; --black-pill:#1f2f44; --hover-bg:#f1f3f5;
+    --serif:'Instrument Serif',Georgia,'Times New Roman',serif;
+  }
+  body{font-size:14px;letter-spacing:-.003em;}
+  .sidebar{width:208px;padding:22px 14px;border-right:1px solid var(--border);gap:24px;}
+  .logo .mark{border-radius:9px;background:var(--black-pill);}
+  .logo .word{font-weight:700;letter-spacing:.14em;font-size:13px;}
+  .navlabel{text-transform:none;letter-spacing:0;font-size:12px;font-weight:500;color:var(--muted);}
+  .storeitem{border-radius:8px;font-weight:500;padding:9px 11px;}
+  .storeitem.active{background:var(--hover-bg);color:var(--ink);font-weight:600;box-shadow:inset 3px 0 0 var(--ink);}
+  .storeitem.active .del{color:var(--muted);}
+  .compare-toggle,.sidebtn{border-radius:8px;font-weight:600;}
+  .compare-toggle.on{background:var(--black-pill);}
+  .main{padding:34px 44px 70px;}
+  .pagehead h1{font-family:var(--serif);font-weight:400;font-size:38px;letter-spacing:-.02em;line-height:1.1;margin-bottom:6px;}
+  .pagehead p{font-size:14px;color:var(--muted);}
+  .tabs{gap:0;margin:26px 0 24px;}
+  .tabbtn{font-weight:500;font-size:14px;padding:10px 2px;margin-right:26px;}
+  .tabbtn.active{font-weight:600;color:var(--ink);border-bottom-color:var(--ink);}
+  .btn{border-radius:8px;font-weight:600;border-color:var(--border-strong);padding:9px 16px;}
+  .btn.solid{background:var(--black-pill);border-color:var(--black-pill);}
+  .btn.solid:hover{background:#0f1a29;}
+  .kpi{border-radius:14px;padding:18px 18px 16px;border:1px solid var(--border);}
+  .kpi.good{border:1.5px solid var(--green);background:var(--green-soft);}
+  .kpi.warn{border:1.5px solid var(--amber);background:var(--amber-soft);}
+  .kpi.crit{border:1.5px solid var(--red);background:var(--red-soft);}
+  .kpi.good .label,.kpi.warn .label,.kpi.crit .label{color:var(--ink-soft);}
+  .kpi.good .value{color:var(--green);} .kpi.warn .value{color:var(--amber);} .kpi.crit .value{color:var(--red);}
+  .kpi.good .kpi-fill-track,.kpi.warn .kpi-fill-track,.kpi.crit .kpi-fill-track{background:rgba(255,255,255,.75);}
+  .kpi .label{text-transform:none;letter-spacing:0;font-size:12.5px;font-weight:500;color:var(--muted);margin-bottom:10px;}
+  .kpi .value{font-weight:600;font-size:27px;letter-spacing:-.025em;color:var(--ink);}
+  .kpi .value.small{font-size:20px;}
+  .kpi .note{font-size:12px;}
+  .kpi-fill-track{height:3px;background:#edf0f3;}
+  .kpi.compact{border-radius:10px;}
+  section.panel{border-radius:16px;padding:26px 28px;border:1px solid var(--border);box-shadow:0 1px 2px rgba(20,30,40,.03);margin-bottom:20px;}
+  section.panel h2{font-family:var(--serif);font-weight:400;font-size:24px;letter-spacing:-.01em;margin-bottom:16px;}
+  section.panel h2 .n{font-family:'Inter',sans-serif;border:0;background:var(--hover-bg);border-radius:20px;padding:2px 9px;font-weight:600;color:var(--ink-soft);}
+  .alert{border-radius:12px;padding:14px 16px;}
+  .alert.crit{background:var(--red-soft);border:1.5px solid var(--red);}
+  .alert.warn{background:var(--amber-soft);border:1.5px solid var(--amber);}
+  .alert .title{font-weight:600;}
+  .alert.crit .title{color:var(--red);} .alert.warn .title{color:var(--amber);}
+  .alert .mkplan{border-color:var(--border-strong);border-radius:8px;font-weight:600;font-size:12px;padding:7px 12px;}
+  .alert .mkplan:hover{background:var(--black-pill);border-color:var(--black-pill);}
+  .entry label,.obj-row label{text-transform:none;letter-spacing:0;font-size:12px;font-weight:500;color:var(--muted);}
+  .obj-row input,.obj-row select,.entry input,.followform input,.followform select,.add-store input,.cell-input,.plan-textarea{border-radius:8px;border-color:var(--border-strong);}
+  table.hist{border:0;font-size:13px;}
+  table.hist th,table.hist td{border:0;border-bottom:1px solid var(--border);}
+  table.hist th{background:transparent;text-transform:none;letter-spacing:0;font-size:12px;font-weight:500;color:var(--muted);padding:10px 8px;}
+  table.hist th.grp{background:transparent;color:var(--ink-soft);font-size:12px;font-weight:600;border-bottom:1px solid var(--border-strong);}
+  table.hist td{padding:11px 8px;}
+  table.hist tr.totales td{background:#f8f9fa;border-top:1px solid var(--border-strong);font-weight:700;}
+  table.subtable{border:0;}
+  table.subtable th,table.subtable td{border:0;border-bottom:1px solid var(--border);}
+  table.subtable th{background:transparent;text-transform:none;letter-spacing:0;font-size:12px;font-weight:500;color:var(--muted);}
+  .plan-card{border-radius:14px;padding:20px 22px;border:1px solid var(--border);}
+  .plan-card.overdue{border:1.5px solid var(--red);background:#fffafa;}
+  .plan-card .indicator-tag{text-transform:none;letter-spacing:0;font-size:12px;font-weight:600;border-radius:20px;padding:4px 11px;background:var(--hover-bg);color:var(--ink-soft);}
+  .plan-card .overdue-tag{text-transform:none;letter-spacing:0;font-size:12px;font-weight:600;border-radius:20px;padding:4px 11px;}
+  .plan-card .desc{font-size:15px;font-weight:600;}
+  .plan-section-head{text-transform:none;letter-spacing:0;font-size:13px;font-weight:600;color:var(--ink-soft);}
+  .pb-title{text-transform:none;letter-spacing:0;font-family:var(--serif);font-weight:400;font-size:21px;color:var(--ink);}
+  select.statussel{border-radius:8px;}
+  .ov-badge{border-radius:20px;font-weight:600;padding:3px 10px;}
+  .overview-card{border-radius:12px;padding:16px 18px;}
+  .overview-card:hover{border-color:var(--border-strong);box-shadow:0 1px 3px rgba(20,30,40,.06);}
+  .overview-card .ov-name{font-weight:600;}
+  .toast{border-radius:10px;font-weight:600;}
+  .sync{background:var(--hover-bg);border-radius:8px;}
+  .gatebox{border-radius:16px;}
+  .sheet-box{border-radius:16px;}
+  .att-item{border-radius:10px;}
+  @media (max-width:900px){ .main{padding:22px 18px 60px;} .pagehead h1{font-size:30px;} }
+  /* ---- Editor de texto con formato ---- */
+  .rt-bar{gap:4px;padding:8px 10px;background:#fafbfc;border:1px solid var(--border);border-bottom:0;border-radius:12px 12px 0 0;}
+  .rt-bar select{border:1px solid var(--border);border-radius:8px;padding:6px 8px;font-size:12.5px;color:var(--ink-soft);background:#fff;height:30px;}
+  .rt-bar button{border:1px solid transparent;background:transparent;border-radius:8px;height:30px;min-width:30px;padding:0 9px;font-size:12.5px;color:var(--ink-soft);transition:background .12s,color .12s;}
+  .rt-bar button:hover{background:var(--hover-bg);border-color:transparent;color:var(--ink);}
+  .rt-bar button:active{background:#e6e9ed;}
+  .rt-sep{height:18px;background:var(--border);margin:0 6px;}
+  .rt-lbl{font-size:11px;font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted);margin:0 2px 0 4px;}
+  .rt-bar button.rt-sw{width:18px!important;min-width:18px!important;height:18px!important;margin:0 2px;border:2px solid #fff!important;box-shadow:0 0 0 1px var(--border-strong);transition:transform .12s;}
+  .rt-bar button.rt-sw:hover{transform:scale(1.18);background-clip:padding-box;}
+  .rt-bar input[type=color]{width:24px;height:24px;border:0;border-radius:50%;padding:0;background:none;overflow:hidden;box-shadow:0 0 0 1px var(--border-strong);}
+  .rt-bar input[type=color]::-webkit-color-swatch-wrapper{padding:0;}
+  .rt-bar input[type=color]::-webkit-color-swatch{border:0;border-radius:50%;}
+  .rt-editor{border:1px solid var(--border);border-radius:0 0 12px 12px;padding:16px 18px;min-height:190px;font-size:15px;line-height:1.65;background:#fff;}
+  .rt-editor:focus{border-color:var(--border-strong);box-shadow:0 0 0 3px rgba(31,47,68,.07);}
+  .plan-block{border-top:0;margin-top:18px;padding:18px 20px 20px;border:1px solid var(--border);border-radius:14px;background:#fff;}
+  .pb-head{margin-bottom:12px;}
+  .pb-title{padding:4px 8px;margin-left:-8px;border-radius:8px;}
+  .pb-title:focus{border-color:var(--border-strong);}
+  .pb-del{font-weight:500;color:var(--muted);padding:5px 11px;border-radius:20px;transition:background .12s,color .12s;}
+  .pb-del:hover{text-decoration:none;background:var(--red-soft);color:var(--red);}
+  .rt-bar{gap:2px;}
+  .rt-bar select{padding:4px 6px;font-size:12px;}
+  .rt-bar select.rt-font{width:104px;}
+  .rt-bar select.rt-size{width:78px;}
+  .rt-bar button{padding:0 7px;}
+  .rt-sep{margin:0 3px;}
+  .rt-bar input[type=color]{width:20px!important;height:20px!important;min-width:20px;margin:0 2px;}
+
 </style>
 
 </head>
@@ -350,7 +461,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 10:45</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 11:52</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
