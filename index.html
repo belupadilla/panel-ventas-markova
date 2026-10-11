@@ -503,7 +503,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 11:00</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 11:20</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -2429,6 +2429,52 @@ function attachNoteHandlers(root){
     };
   });
 }
+// Proyección de cierre: usa SIEMPRE las metas diarias de la planilla. Ritmo real = venta / meta de los días ya cargados.
+function projectionData(storeId){
+  const today = todayISO(); const m = today.slice(0,7);
+  const dw = dayObjectiveWeights(storeId, m);
+  const loaded = entriesForMonth(storeId, m).filter(e=>e.date<=today && ((Number(e.sales)||0)>0 || (Number(e.tickets)||0)>0)).sort((a,b)=>a.date<b.date?-1:1);
+  if(!loaded.length) return null;
+  const last = loaded[loaded.length-1].date;
+  const totalDays = lastDayOfMonth(m); const monthEnd = m+'-'+String(totalDays).padStart(2,'0');
+  const sold = loaded.reduce((t,e)=>t+(Number(e.sales)||0),0);
+  const metaLoaded = loaded.reduce((t,e)=>t+(Number(e.meta)||0),0);
+  const daysLeft = last>=monthEnd ? 0 : daysBetweenInclusive(addDaysISO(last,1), monthEnd);
+  let remainMeta = 0, remainWithMeta = 0, remainNoMeta = 0;
+  if(dw){ Object.keys(dw.w).forEach(iso=>{ if(iso>last){ if(dw.w[iso]>0){ remainMeta+=dw.w[iso]; remainWithMeta++; } else remainNoMeta++; } }); }
+  else remainNoMeta = daysLeft;
+  const objective = dw ? dw.tot : 0;
+  // últimos 4 días cargados vs su meta
+  const rec = loaded.slice(-4); const recSales = rec.reduce((t,e)=>t+(Number(e.sales)||0),0), recMeta = rec.reduce((t,e)=>t+(Number(e.meta)||0),0);
+  return { m, last, loadedDays:loaded.length, sold, metaLoaded, daysLeft, remainMeta, remainWithMeta, remainNoMeta, objective,
+           ritmo: metaLoaded>0 ? sold/metaLoaded : null, recPct: recMeta>0 ? recSales/recMeta : null, recDays: rec.length };
+}
+function projectionHtml(storeId){
+  const d = projectionData(storeId); if(!d) return '';
+  const f = iso=>iso.split('-').reverse().slice(0,2).join('/');
+  let body;
+  if(!(d.objective>0) || d.ritmo===null){
+    body = `<div class="detail">Faltan las metas diarias de este mes en la planilla. Cargalas para ver la proyección de cierre: el panel no inventa metas.</div>`;
+  } else {
+    const proj = d.sold + d.remainMeta*d.ritmo;
+    const projPct = proj/d.objective*100;
+    const need = Math.max(0, d.objective - d.sold);
+    const perDayNeed = d.daysLeft>0 ? need/d.daysLeft : 0;
+    const perDayNow = d.sold/d.loadedDays;
+    const needPctMeta = d.remainMeta>0 ? need/d.remainMeta*100 : null;
+    const lvl = projPct>=100 ? 'ok' : projPct>=95 ? 'warn' : 'crit';
+    const color = lvl==='ok' ? '#1a7f37' : lvl==='warn' ? '#9a6700' : '#cf222e';
+    body = `
+      <div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:6px">
+        <div><div class="detail">Vendido (${f(d.m+'-01')} al ${f(d.last)})</div><div style="font-size:20px;font-weight:700">${fmtMoney(d.sold)}</div><div class="detail">${fmtPct(d.ritmo*100)} de la meta de esos ${d.loadedDays} día(s)</div></div>
+        <div><div class="detail">Proyección de cierre a este ritmo</div><div style="font-size:20px;font-weight:700;color:${color}">${fmtMoney(proj)}</div><div class="detail">${fmtPct(projPct)} del objetivo (${fmtMoney(d.objective)})</div></div>
+        <div><div class="detail">Para llegar al objetivo${d.daysLeft?` (${d.daysLeft} días)`:''}</div><div style="font-size:20px;font-weight:700">${need>0?fmtMoney(perDayNeed)+' / día':'¡Objetivo cumplido!'}</div><div class="detail">${need>0?`venden en promedio ${fmtMoney(perDayNow)} / día${needPctMeta!==null?` · hay que hacer el ${fmtPct(needPctMeta)} de la meta diaria`:''}`:''}</div></div>
+        ${d.recPct!==null?`<div><div class="detail">Últimos ${d.recDays} días cargados</div><div style="font-size:20px;font-weight:700">${fmtPct(d.recPct*100)}</div><div class="detail">de su meta diaria</div></div>`:''}
+      </div>
+      ${d.remainNoMeta>0?`<div class="detail" style="margin-top:6px">⚠ ${d.remainNoMeta} día(s) que faltan no tienen meta en la planilla: la proyección los cuenta en 0, por eso puede quedar corta.</div>`:''}`;
+  }
+  return `<section class="panel"><h2>Proyección de cierre del mes <span class="n">según las metas diarias de la planilla</span></h2>${body}</section>`;
+}
 function alertsPanelHtml(storeId){
   const alerts = computeAlerts(storeId);
   const notes = unreadNotes(storeId);
@@ -2452,7 +2498,7 @@ function alertsPanelHtml(storeId){
   }
   ensureRange();
   const rangeLabel = rangeStart===rangeEnd ? rangeStart.split('-').reverse().join('/') : `${rangeStart.split('-').reverse().join('/')} – ${rangeEnd.split('-').reverse().join('/')}`;
-  return `<section class="panel"><h2>Alertas <span class="n">${rangeLabel}</span></h2>${inner}</section>`;
+  return projectionHtml(storeId) + `<section class="panel"><h2>Alertas <span class="n">${rangeLabel}</span></h2>${inner}</section>`;
 }
 function attachAlertHandlers(){
   attachNoteHandlers(document);
