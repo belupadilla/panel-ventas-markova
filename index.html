@@ -503,7 +503,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 10/10/2026 · 18:10</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 10:45</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -971,6 +971,7 @@ document.addEventListener('change', async e=>{
       ensurePlanExtras(found.plan).attachments.push(att);
     }
     inp.value='';
+    markFileUpdate(found.plan, picked.map(x=>x.name).join(', '));
     await saveState(); render();
     showToast(picked.length>1?'Archivos adjuntados':'Archivo adjuntado');
   }catch(err){ showToast('No se pudo subir el archivo. Reintentá.'); }
@@ -1688,7 +1689,7 @@ document.getElementById('sheetSave').addEventListener('click', async ()=>{
       if(size>ATT_MAX){ showToast('El archivo supera los 10 MB y no se puede guardar.'); return; }
       showToast('Guardando…');
       await uploadAtt(ED.att, b64);
-      ED.att.size = size; ED.att.modifiedAt = todayISO();
+      ED.att.size = size; ED.att.modifiedAt = todayISO(); markFileUpdate(ED.plan, ED.att.name);
       await saveState(); ED.dirty=false; render();
       document.getElementById('sheetSub').textContent = 'Plan: ' + (ED.plan.indicator||'') + ' · ' + fmtSize(size);
       showToast('Cambios guardados');
@@ -1704,7 +1705,7 @@ document.getElementById('sheetSave').addEventListener('click', async ()=>{
     if(size>ATT_MAX){ showToast('El archivo supera los 10 MB y no se puede guardar.'); return; }
     showToast('Guardando…');
     await uploadAtt(ED.att, b64);
-    ED.att.size = size; ED.att.modifiedAt = todayISO();
+    ED.att.size = size; ED.att.modifiedAt = todayISO(); markFileUpdate(ED.plan, ED.att.name);
     await saveState(); ED.dirty=false; render();
     document.getElementById('sheetSub').textContent = 'Plan: ' + (ED.plan.indicator||'') + ' · ' + fmtSize(size);
     showToast('Cambios guardados');
@@ -2236,7 +2237,7 @@ function renderStoreList(){
   const filtered = sortedStores().filter(s=>!term || (s.name||'').toLowerCase().includes(term));
   list.innerHTML = filtered.length ? filtered.map(s=>{
     const active = (!compareMode && !overviewMode && !progresoMode && s.id===activeStoreId) ? 'active' : '';
-    const bell = (unreadNotes(s.id).length || newPlans(s.id).length) ? ' <span class="bell" title="Hay novedades en este local">🔔</span>' : '';
+    const bell = (unreadNotes(s.id).length || newPlans(s.id).length || fileUpdates(s.id).length) ? ' <span class="bell" title="Hay novedades en este local">🔔</span>' : '';
     return `<div class="storeitem ${active}" data-id="${s.id}"><span>${escapeHtml(s.name)}${bell}</span><span class="del" data-del="${s.id}">✕</span></div>`;
   }).join('') : `<div style="font-size:12px;color:var(--muted);padding:8px 4px;">Sin resultados</div>`;
   list.querySelectorAll('.storeitem').forEach(el=>{
@@ -2323,7 +2324,7 @@ function renderViewTabs(){
   el.innerHTML = `
     <button class="tabbtn ${activeView==='daily'?'active':''}" data-view="daily">Vista diaria</button>
     <button class="tabbtn ${activeView==='monthly'?'active':''}" data-view="monthly">Vista mensual</button>
-    <button class="tabbtn ${activeView==='plan'?'active':''}" data-view="plan">Plan de acción${enCursoCount?` (${enCursoCount})`:''}${newPlans(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">🔔 Plan nuevo</span>`:''}${noFollowUpPlans(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">⚠ Sin seguimiento</span>`:''}${unreadNotes(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">🔔 Nota de seguimiento activa</span>`:''}</button>
+    <button class="tabbtn ${activeView==='plan'?'active':''}" data-view="plan">Plan de acción${enCursoCount?` (${enCursoCount})`:''}${newPlans(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">🔔 Plan nuevo</span>`:''}${fileUpdates(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">🔔 Archivo actualizado</span>`:''}${noFollowUpPlans(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">⚠ Sin seguimiento</span>`:''}${unreadNotes(activeStoreId).length?` <span class="ov-badge warn" style="padding:1px 7px;margin-left:6px;font-size:10.5px;">🔔 Nota de seguimiento activa</span>`:''}</button>
   `;
   el.querySelectorAll('.tabbtn').forEach(b=>b.onclick=()=>{ activeView=b.dataset.view; render(); });
 }
@@ -2332,6 +2333,22 @@ function unreadNotes(storeId){
   const out=[];
   (state.plans[storeId]||[]).forEach(p=>(p.followUps||[]).forEach(f=>{ if(f.nueva && (f.note||'').trim()) out.push({plan:p, fu:f}); }));
   return out.sort((a,b)=>b.fu.date.localeCompare(a.fu.date));
+}
+function fileUpdates(storeId){
+  return (state.plans[storeId]||[]).filter(p=>p.fileUpdate && p.fileUpdate.nueva);
+}
+function markFileUpdate(plan, name){ if(!plan) return; let t=plan; try{ const f=findPlanById(plan.id); if(f && f.plan) t=f.plan; }catch(e){} t.fileUpdate = { nueva:true, date:todayISO(), name:name||'' }; }
+function fileUpdateAlertHtml(storeId, p){
+  const fu=p.fileUpdate||{};
+  return `<div class="alert warn note-alert">
+    <span class="dot"></span>
+    <div class="body">
+      <div class="title">Se actualizó un archivo adjunto del plan</div>
+      <div class="detail">${(fu.date||'').split('-').reverse().join('/')} · «${escapeHtml(p.indicator||'')}»${fu.name?': '+escapeHtml(fu.name):''}</div>
+    </div>
+    <button class="mkplan note-go" type="button" data-store="${storeId}" data-plan="${p.id}">Ver plan</button>
+    <button class="mkplan file-seen" type="button" data-store="${storeId}" data-plan="${p.id}">Marcar visto</button>
+  </div>`;
 }
 function newPlans(storeId){
   return (state.plans[storeId]||[]).filter(p=>p.nuevo===true && p.status==='en_curso');
@@ -2396,6 +2413,13 @@ function attachNoteHandlers(root){
       if(plan){ plan.nuevo=false; await saveState(); render(); }
     };
   });
+  (root||document).querySelectorAll('.file-seen').forEach(b=>{
+    b.onclick = async (ev)=>{
+      ev.stopPropagation();
+      const plan=(state.plans[b.dataset.store]||[]).find(x=>x.id===b.dataset.plan);
+      if(plan && plan.fileUpdate){ plan.fileUpdate.nueva=false; await saveState(); render(); }
+    };
+  });
   (root||document).querySelectorAll('.note-read').forEach(b=>{
     b.onclick = async (ev)=>{
       ev.stopPropagation();
@@ -2410,7 +2434,7 @@ function alertsPanelHtml(storeId){
   const notes = unreadNotes(storeId);
   const mm = missingMetaDays(storeId, rangeStart, rangeEnd);
   const metaMissHtml = mm.length ? `<div class="alert warn"><span class="dot"></span><div class="body"><div class="title">Faltan metas diarias en la planilla</div><div class="detail">${mm.length} día(s) del período no tienen meta cargada (${mm.slice(0,6).map(d=>d.split('-').reverse().slice(0,2).join('/')).join(', ')}${mm.length>6?'…':''}). El objetivo y los planes se calculan solo con los días que tienen meta: completala en la planilla para que los números sean exactos.</div></div></div>` : '';
-  const notesHtml = metaMissHtml + newPlans(storeId).map(p=>newPlanAlertHtml(storeId,p)).join('') + noFollowUpPlans(storeId).map(n=>noFollowAlertHtml(storeId,n)).join('') + notes.map(n=>noteAlertHtml(storeId,n,false)).join('');
+  const notesHtml = metaMissHtml + newPlans(storeId).map(p=>newPlanAlertHtml(storeId,p)).join('') + fileUpdates(storeId).map(p=>fileUpdateAlertHtml(storeId,p)).join('') + noFollowUpPlans(storeId).map(n=>noFollowAlertHtml(storeId,n)).join('') + notes.map(n=>noteAlertHtml(storeId,n,false)).join('');
   let inner;
   if(!alerts.length){
     inner = notesHtml + `<div class="allgood">✓ Sin alertas activas en el período seleccionado.</div>`;
@@ -2432,7 +2456,7 @@ function alertsPanelHtml(storeId){
 }
 function attachAlertHandlers(){
   attachNoteHandlers(document);
-  document.querySelectorAll('.mkplan:not(.note-go):not(.note-read):not(.plan-seen)').forEach(btn=>{
+  document.querySelectorAll('.mkplan:not(.note-go):not(.note-read):not(.plan-seen):not(.file-seen)').forEach(btn=>{
     btn.onclick = ()=>{
       try{
         pendingPlanIndicator = btn.dataset.indicator;
