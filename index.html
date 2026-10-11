@@ -523,7 +523,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 20:20</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 20:30</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -1957,6 +1957,12 @@ function expectedForRange(storeId, start, end, source, field){
   });
   return total;
 }
+// Año anterior comparable: solo hasta el último día con venta cargada (no el mes entero contra pocos días)
+function expectedAntToDate(storeId, start, end){
+  const done = entriesInRange(storeId, start, end).filter(e=>(Number(e.sales)||0)>0 || (Number(e.tickets)||0)>0).map(e=>e.date).sort();
+  const cut = done.length ? done[done.length-1] : end;
+  return expectedForRange(storeId, start, cut<end?cut:end, 'ant', 'importe');
+}
 function missingMetaDays(storeId, start, end){
   const today = todayISO(); const last = end<today ? end : today;
   const have = new Set(entriesInRange(storeId, start, last).filter(e=>Number(e.meta)>0).map(e=>e.date));
@@ -2092,7 +2098,7 @@ function computeAlerts(storeId){
   const periodLabel = start===end ? `el ${start.split('-').reverse().join('/')}` : `el período ${start.split('-').reverse().join('/')} al ${end.split('-').reverse().join('/')}`;
 
   const expImporte = expectedForRange(storeId, start, end, 'forecast', 'importe');
-  const expAntImporte = expectedForRange(storeId, start, end, 'ant', 'importe');
+  const expAntImporte = expectedAntToDate(storeId, start, end);
 
   const candidates = [];
 
@@ -2570,7 +2576,7 @@ function renderDailyView(){
     articulos: expectedForRange(activeStoreId, rangeStart, rangeEnd, 'forecast', 'articulos'),
     tickets: expectedForRange(activeStoreId, rangeStart, rangeEnd, 'forecast', 'tickets'),
   };
-  const expAntImporte = expectedForRange(activeStoreId, rangeStart, rangeEnd, 'ant', 'importe');
+  const expAntImporte = expectedAntToDate(activeStoreId, rangeStart, rangeEnd);
   const crecimientoPct = expAntImporte>0 ? (agg.sales/expAntImporte*100) : 0;
   const displayedMonthKey = rangeStart.slice(0,7);
   const monthlyForecast = getForecast(activeStoreId, displayedMonthKey);
@@ -4232,7 +4238,7 @@ function renderProgresoLocales(){
       articulos: expectedForRange(s.id, rs, re, 'forecast', 'articulos'),
       tickets: expectedForRange(s.id, rs, re, 'forecast', 'tickets'),
     };
-    const expAntImporte = expectedForRange(s.id, rs, re, 'ant', 'importe');
+    const expAntImporte = expectedAntToDate(s.id, rs, re);
     const monthlyForecast = getForecast(s.id, mKey);
     const cumMeta = agg.meta>0 ? (agg.sales/agg.meta*100) : 0;
     const loadedDays = rangeEntries.filter(e=>e.sales!==null && e.sales!==undefined).length;
