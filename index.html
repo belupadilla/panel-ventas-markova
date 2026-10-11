@@ -503,7 +503,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 10:45</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 11:00</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -4114,13 +4114,10 @@ function renderPlanCard(p){
 
       <div class="followlist">
         <div class="plan-section-head" style="margin-bottom:6px;">Seguimiento</div>
-        ${(function(){ const a = planAutoStatus(activeStoreId, p); return `<div style="font-size:12.5px;margin-bottom:6px;">Estado automático a hoy: <span class="fres ${a.cls}">${a.label}</span> ${a.text?`<span class="fval">(${escapeHtml(a.text)}${a.pct!==null?' · '+varStr(a.pct):''})</span>`:''}</div>`; })()}
-        ${p.followUps.length ? p.followUps.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(f=>{ const a = planAutoStatus(activeStoreId, p, f.date); return `
+        ${p.followUps.length ? p.followUps.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(f=>{ return `
           <div class="followitem">
             <span class="fdate">${f.date.split('-').reverse().join('/')}</span>
             ${f.nueva?'<span class="ov-badge warn" style="padding:1px 6px;">NUEVA</span>':''}${f.nueva===false?'<span title="Leída" style="color:var(--green);font-weight:800;font-size:15px;line-height:1;">✓</span>':''}
-            <span class="fres ${a.cls}">${a.label}</span>
-            ${a.text?`<span class="fval">(${escapeHtml(a.text)})</span>`:''}
             <span class="follow-note-text" data-fu="${f.id}" style="flex:1;min-width:120px;white-space:pre-wrap;word-break:break-word;">${escapeHtml(f.note||'')}</span>
             <button class="btn follow-edit-btn" type="button" data-plan="${p.id}" data-fu="${f.id}" title="Editar nota" style="padding:2px 8px;font-size:12px;">✏️</button>
             ${f.nueva?`<button class="btn follow-read-btn" type="button" data-plan="${p.id}" data-fu="${f.id}" style="padding:2px 8px;font-size:12px;">Leída</button>`:''}
