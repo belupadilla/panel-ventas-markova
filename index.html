@@ -503,7 +503,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 11:00</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 11:20</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -2063,13 +2063,27 @@ function historicalBaseline(storeId, start, end, n){
   return combined;
 }
 
+// Las alertas miran lo que pasó en los últimos días con venta cargada (no el mes completo)
+const ALERT_DAYS = 4;
+function alertWindow(storeId){
+  const today = todayISO();
+  const dates = entriesForStore(storeId).filter(e=>e.date<=today && ((Number(e.sales)||0)>0 || (Number(e.tickets)||0)>0)).map(e=>e.date).sort();
+  if(!dates.length) return null;
+  const end = dates[dates.length-1];
+  return { start: addDaysISO(end, -(ALERT_DAYS-1)), end };
+}
+function alertWindowLabel(storeId){
+  const w = alertWindow(storeId); if(!w) return 'sin datos';
+  const f = d=>d.split('-').reverse().slice(0,2).join('/');
+  return `últimos ${ALERT_DAYS} días · ${f(w.start)} al ${f(w.end)}`;
+}
 function computeAlerts(storeId){
-  ensureRange();
-  const start = rangeStart, end = rangeEnd;
+  const win = alertWindow(storeId); if(!win) return [];
+  const start = win.start, end = win.end;
   const entries = entriesInRange(storeId, start, end);
   if(!entries.length) return [];
   const agg = aggEntries(entries);
-  const periodLabel = start===end ? `el ${start.split('-').reverse().join('/')}` : `el período ${start.split('-').reverse().join('/')} al ${end.split('-').reverse().join('/')}`;
+  const periodLabel = start===end ? `el ${start.split('-').reverse().join('/')}` : `los últimos ${ALERT_DAYS} días (${start.split('-').reverse().join('/')} al ${end.split('-').reverse().join('/')})`;
 
   const expImporte = expectedForRange(storeId, start, end, 'forecast', 'importe');
   const expAntImporte = expectedForRange(storeId, start, end, 'ant', 'importe');
@@ -2081,7 +2095,7 @@ function computeAlerts(storeId){
   if(expImporte>0){
     const ritmoPct = agg.sales/expImporte*100;
     if(ritmoPct < 95) primary = { ritmoPct, score:100-ritmoPct,
-      detail:`Para ${periodLabel} correspondían ${fmtMoney(expImporte)} (parte proporcional del pronóstico mensual) y llevan ${fmtMoney(agg.sales)} — ${varStr(ritmoPct-100)} respecto de lo esperado.`,
+      detail:`Para ${periodLabel} correspondían ${fmtMoney(expImporte)} (según las metas diarias de esos días) y llevan ${fmtMoney(agg.sales)} — ${varStr(ritmoPct-100)} respecto de lo esperado.`,
       title:'Por debajo del objetivo del período' };
   }
   if(!primary && agg.meta>0){
@@ -2437,7 +2451,7 @@ function alertsPanelHtml(storeId){
   const notesHtml = metaMissHtml + newPlans(storeId).map(p=>newPlanAlertHtml(storeId,p)).join('') + fileUpdates(storeId).map(p=>fileUpdateAlertHtml(storeId,p)).join('') + noFollowUpPlans(storeId).map(n=>noFollowAlertHtml(storeId,n)).join('') + notes.map(n=>noteAlertHtml(storeId,n,false)).join('');
   let inner;
   if(!alerts.length){
-    inner = notesHtml + `<div class="allgood">✓ Sin alertas activas en el período seleccionado.</div>`;
+    inner = notesHtml + `<div class="allgood">✓ Sin alertas activas en los últimos días.</div>`;
   } else {
     inner = notesHtml + alerts.map(a=>`
       <div class="alert ${a.level}">
@@ -2452,7 +2466,7 @@ function alertsPanelHtml(storeId){
   }
   ensureRange();
   const rangeLabel = rangeStart===rangeEnd ? rangeStart.split('-').reverse().join('/') : `${rangeStart.split('-').reverse().join('/')} – ${rangeEnd.split('-').reverse().join('/')}`;
-  return `<section class="panel"><h2>Alertas <span class="n">${rangeLabel}</span></h2>${inner}</section>`;
+  return `<section class="panel"><h2>Alertas <span class="n">${alertWindowLabel(storeId)}</span></h2>${inner}</section>`;
 }
 function attachAlertHandlers(){
   attachNoteHandlers(document);
