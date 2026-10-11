@@ -503,7 +503,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 11:20</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 11:45</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -2065,25 +2065,37 @@ function historicalBaseline(storeId, start, end, n){
 
 // Las alertas miran lo que pasó en los últimos días con venta cargada (no el mes completo)
 const ALERT_DAYS = 4;
-function alertWindow(storeId){
+function alertWindow(storeId, scope){
   const today = todayISO();
   const dates = entriesForStore(storeId).filter(e=>e.date<=today && ((Number(e.sales)||0)>0 || (Number(e.tickets)||0)>0)).map(e=>e.date).sort();
   if(!dates.length) return null;
   const end = dates[dates.length-1];
+  // 'month' = acumulado desde el día 1 del mes hasta el último día cargado (no el mes completo)
+  if(scope==='month') return { start: end.slice(0,8)+'01', end };
   return { start: addDaysISO(end, -(ALERT_DAYS-1)), end };
 }
-function alertWindowLabel(storeId){
-  const w = alertWindow(storeId); if(!w) return 'sin datos';
+function alertWindowLabel(storeId, scope){
+  const w = alertWindow(storeId, scope); if(!w) return 'sin datos';
   const f = d=>d.split('-').reverse().slice(0,2).join('/');
-  return `últimos ${ALERT_DAYS} días · ${f(w.start)} al ${f(w.end)}`;
+  return (scope==='month' ? 'acumulado del mes' : `últimos ${ALERT_DAYS} días`) + ` · ${f(w.start)} al ${f(w.end)}`;
 }
-function computeAlerts(storeId){
-  const win = alertWindow(storeId); if(!win) return [];
+// Alertas de los últimos días + del acumulado del mes hasta hoy (sin repetir las que ya salen en ambos)
+function computeAlertsBoth(storeId){
+  const recent = computeAlerts(storeId,'recent').map(a=>({...a,scope:'recent'}));
+  const w = alertWindow(storeId,'recent'), m = alertWindow(storeId,'month');
+  if(!w || !m || m.start>=w.start) return {recent, month:[]};
+  const seen = new Set(recent.map(a=>a.title));
+  const month = computeAlerts(storeId,'month').filter(a=>!seen.has(a.title)).map(a=>({...a,scope:'month'}));
+  return {recent, month};
+}
+function computeAlertsAll(storeId){ const r=computeAlertsBoth(storeId); return [...r.recent, ...r.month]; }
+function computeAlerts(storeId, scope){
+  const win = alertWindow(storeId, scope); if(!win) return [];
   const start = win.start, end = win.end;
   const entries = entriesInRange(storeId, start, end);
   if(!entries.length) return [];
   const agg = aggEntries(entries);
-  const periodLabel = start===end ? `el ${start.split('-').reverse().join('/')}` : `los últimos ${ALERT_DAYS} días (${start.split('-').reverse().join('/')} al ${end.split('-').reverse().join('/')})`;
+  const periodLabel = start===end ? `el ${start.split('-').reverse().join('/')}` : (scope==='month' ? `el acumulado del mes (${start.split('-').reverse().join('/')} al ${end.split('-').reverse().join('/')})` : `los últimos ${ALERT_DAYS} días (${start.split('-').reverse().join('/')} al ${end.split('-').reverse().join('/')})`);
 
   const expImporte = expectedForRange(storeId, start, end, 'forecast', 'importe');
   const expAntImporte = expectedForRange(storeId, start, end, 'ant', 'importe');
@@ -2444,16 +2456,17 @@ function attachNoteHandlers(root){
   });
 }
 function alertsPanelHtml(storeId){
-  const alerts = computeAlerts(storeId);
+  const both = computeAlertsBoth(storeId);
+  const alerts = [...both.recent, ...both.month];
   const notes = unreadNotes(storeId);
   const mm = missingMetaDays(storeId, rangeStart, rangeEnd);
   const metaMissHtml = mm.length ? `<div class="alert warn"><span class="dot"></span><div class="body"><div class="title">Faltan metas diarias en la planilla</div><div class="detail">${mm.length} día(s) del período no tienen meta cargada (${mm.slice(0,6).map(d=>d.split('-').reverse().slice(0,2).join('/')).join(', ')}${mm.length>6?'…':''}). El objetivo y los planes se calculan solo con los días que tienen meta: completala en la planilla para que los números sean exactos.</div></div></div>` : '';
   const notesHtml = metaMissHtml + newPlans(storeId).map(p=>newPlanAlertHtml(storeId,p)).join('') + fileUpdates(storeId).map(p=>fileUpdateAlertHtml(storeId,p)).join('') + noFollowUpPlans(storeId).map(n=>noFollowAlertHtml(storeId,n)).join('') + notes.map(n=>noteAlertHtml(storeId,n,false)).join('');
   let inner;
   if(!alerts.length){
-    inner = notesHtml + `<div class="allgood">✓ Sin alertas activas en los últimos días.</div>`;
+    inner = notesHtml + `<div class="allgood">✓ Sin alertas activas en los últimos días ni en el acumulado del mes.</div>`;
   } else {
-    inner = notesHtml + alerts.map(a=>`
+    const one = a=>`
       <div class="alert ${a.level}">
         <span class="dot"></span>
         <div class="body">
@@ -2462,11 +2475,15 @@ function alertsPanelHtml(storeId){
           ${a.reco?`<div class="reco"><strong>Dónde apuntar:</strong> ${escapeHtml(a.reco)}</div>`:''}
         </div>
         <button class="mkplan" data-indicator="${escapeHtml(a.indicator)}" data-reco="${escapeHtml(a.reco||'')}">+ Crear plan</button>
-      </div>`).join('');
+      </div>`;
+    const sub = t=>`<div style="font-size:12px;font-weight:700;color:#57606a;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.3px">${t}</div>`;
+    inner = notesHtml
+      + (both.recent.length ? sub('Últimos días · '+alertWindowLabel(storeId,'recent').split(' · ')[1]) + both.recent.map(one).join('') : '')
+      + (both.month.length ? sub('Acumulado del mes · '+alertWindowLabel(storeId,'month').split(' · ')[1]) + both.month.map(one).join('') : '');
   }
   ensureRange();
   const rangeLabel = rangeStart===rangeEnd ? rangeStart.split('-').reverse().join('/') : `${rangeStart.split('-').reverse().join('/')} – ${rangeEnd.split('-').reverse().join('/')}`;
-  return `<section class="panel"><h2>Alertas <span class="n">${alertWindowLabel(storeId)}</span></h2>${inner}</section>`;
+  return `<section class="panel"><h2>Alertas <span class="n">últimos ${ALERT_DAYS} días y acumulado del mes</span></h2>${inner}</section>`;
 }
 function attachAlertHandlers(){
   attachNoteHandlers(document);
@@ -4221,7 +4238,7 @@ function renderOverview(){
   ensureRange();
 
   const storeSummaries = sortedStores().map(s=>{
-    const alerts = computeAlerts(s.id);
+    const alerts = computeAlertsAll(s.id);
     const crit = alerts.filter(a=>a.level==='crit').length;
     const warn = alerts.filter(a=>a.level==='warn').length;
     const plans = state.plans[s.id] || [];
@@ -4339,7 +4356,7 @@ function renderCompare(){
     const agg = aggEntries(entriesForMonth(s.id, mKey));
     const pron = getForecast(s.id, mKey).importe;
     const varPron = pron>0 ? (agg.sales/pron-1)*100 : null;
-    const alerts = computeAlerts(s.id);
+    const alerts = computeAlertsAll(s.id);
     return {store:s, agg, pron, varPron, alerts};
   });
   const totals = rows.reduce((t,r)=>{ t.sales+=r.agg.sales; t.articulos+=r.agg.articulos; t.tickets+=r.agg.tickets; t.pron+=r.pron; return t; }, {sales:0,articulos:0,tickets:0,pron:0});
