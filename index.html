@@ -503,7 +503,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 11:20</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 11:35</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -2452,28 +2452,46 @@ function projectionData(storeId){
 function projectionHtml(storeId){
   const d = projectionData(storeId); if(!d) return '';
   const f = iso=>iso.split('-').reverse().slice(0,2).join('/');
-  let body;
+  const MES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][Number(d.m.slice(5,7))-1];
+  const head = (pill)=>`<h2>Proyección de cierre de ${MES} ${pill||''}</h2>`;
   if(!(d.objective>0) || d.ritmo===null){
-    body = `<div class="detail">Faltan las metas diarias de este mes en la planilla. Cargalas para ver la proyección de cierre: el panel no inventa metas.</div>`;
-  } else {
-    const proj = d.sold + d.remainMeta*d.ritmo;
-    const projPct = proj/d.objective*100;
-    const need = Math.max(0, d.objective - d.sold);
-    const perDayNeed = d.daysLeft>0 ? need/d.daysLeft : 0;
-    const perDayNow = d.sold/d.loadedDays;
-    const needPctMeta = d.remainMeta>0 ? need/d.remainMeta*100 : null;
-    const lvl = projPct>=100 ? 'ok' : projPct>=95 ? 'warn' : 'crit';
-    const color = lvl==='ok' ? '#1a7f37' : lvl==='warn' ? '#9a6700' : '#cf222e';
-    body = `
-      <div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:6px">
-        <div><div class="detail">Vendido (${f(d.m+'-01')} al ${f(d.last)})</div><div style="font-size:20px;font-weight:700">${fmtMoney(d.sold)}</div><div class="detail">${fmtPct(d.ritmo*100)} de la meta de esos ${d.loadedDays} día(s)</div></div>
-        <div><div class="detail">Proyección de cierre a este ritmo</div><div style="font-size:20px;font-weight:700;color:${color}">${fmtMoney(proj)}</div><div class="detail">${fmtPct(projPct)} del objetivo (${fmtMoney(d.objective)})</div></div>
-        <div><div class="detail">Para llegar al objetivo${d.daysLeft?` (${d.daysLeft} días)`:''}</div><div style="font-size:20px;font-weight:700">${need>0?fmtMoney(perDayNeed)+' / día':'¡Objetivo cumplido!'}</div><div class="detail">${need>0?`venden en promedio ${fmtMoney(perDayNow)} / día${needPctMeta!==null?` · hay que hacer el ${fmtPct(needPctMeta)} de la meta diaria`:''}`:''}</div></div>
-        ${d.recPct!==null?`<div><div class="detail">Últimos ${d.recDays} días cargados</div><div style="font-size:20px;font-weight:700">${fmtPct(d.recPct*100)}</div><div class="detail">de su meta diaria</div></div>`:''}
-      </div>
-      ${d.remainNoMeta>0?`<div class="detail" style="margin-top:6px">⚠ ${d.remainNoMeta} día(s) que faltan no tienen meta en la planilla: la proyección los cuenta en 0, por eso puede quedar corta.</div>`:''}`;
+    return `<section class="panel">${head('')}<div class="detail" style="color:var(--ink-soft);font-size:13px">Faltan las metas diarias de ${MES} en la planilla. Cargalas y acá vas a ver cómo viene el mes y cuánto hay que vender por día para llegar. El panel no inventa metas.</div></section>`;
   }
-  return `<section class="panel"><h2>Proyección de cierre del mes <span class="n">según las metas diarias de la planilla</span></h2>${body}</section>`;
+  const proj = d.sold + d.remainMeta*d.ritmo;
+  const projPct = proj/d.objective*100;
+  const need = Math.max(0, d.objective - d.sold);
+  const perDayNeed = d.daysLeft>0 ? need/d.daysLeft : 0;
+  const perDayNow = d.sold/d.loadedDays;
+  const lvl = projPct>=100 ? 'good' : projPct>=95 ? 'warn' : 'crit';
+  const pillTxt = lvl==='good' ? 'En camino' : lvl==='warn' ? 'Casi: hay que apretar' : 'Por debajo del objetivo';
+  const pill = `<span class="n" style="background:var(--${lvl==='good'?'green':lvl==='warn'?'amber':'red'}-soft);color:var(--${lvl==='good'?'green':lvl==='warn'?'amber':'red'});padding:2px 9px;border-radius:99px;font-weight:700;font-size:11.5px;margin-left:8px">${pillTxt}</span>`;
+  const barColor = `var(--${lvl==='good'?'green':lvl==='warn'?'amber':'red'})`;
+  const donePct = Math.min(100, d.sold/d.objective*100);
+  const shouldPct = Math.min(100, d.metaLoaded/d.objective*100);
+  const gap = d.objective - proj;
+  const msg = gap>0
+    ? `Con el ritmo que llevan (${fmtPct(d.ritmo*100)} de la meta), el mes cerraría en <b>${fmtMoney(proj)}</b>, o sea <b>${fmtMoney(gap)} por debajo</b> del objetivo.`
+    : `Con el ritmo que llevan (${fmtPct(d.ritmo*100)} de la meta), el mes cerraría en <b>${fmtMoney(proj)}</b>, <b>${fmtMoney(-gap)} por encima</b> del objetivo.`;
+  const msg2 = need>0 && d.daysLeft>0
+    ? ` Para llegar al objetivo hay que vender <b>${fmtMoney(perDayNeed)} por día</b> los ${d.daysLeft} días que quedan (hoy el promedio es ${fmtMoney(perDayNow)}).`
+    : (need<=0 ? ' El objetivo del mes ya está cumplido.' : '');
+  const recTxt = d.recPct!==null ? ` En los últimos ${d.recDays} días cargados vendieron el <b>${fmtPct(d.recPct*100)}</b> de su meta diaria.` : '';
+  const warnTxt = d.remainNoMeta>0 ? `<div class="detail" style="margin-top:8px;color:var(--amber)">⚠ A ${d.remainNoMeta} día(s) que faltan les falta la meta en la planilla: la proyección los cuenta en 0 y puede quedar corta.</div>` : '';
+  return `<section class="panel">${head(pill)}
+    <div style="margin:6px 0 14px">
+      <div style="position:relative;height:12px;background:var(--hover-bg);border-radius:99px;overflow:hidden">
+        <div style="position:absolute;left:0;top:0;bottom:0;width:${donePct.toFixed(1)}%;background:${barColor};border-radius:99px"></div>
+        <div title="Lo que debían llevar vendido a hoy" style="position:absolute;left:${shouldPct.toFixed(1)}%;top:0;bottom:0;width:2px;background:var(--ink)"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:4px"><span>Vendido ${fmtPct(donePct)} del objetivo del mes</span><span>Raya negra: lo que debían llevar a hoy (${fmtPct(shouldPct)})</span></div>
+    </div>
+    <div class="kpi-row" style="margin-bottom:12px">
+      <div class="kpi"><div class="label">Vendido al ${f(d.last)}</div><div class="value">${fmtMoney(d.sold)}</div><div class="note">Meta de esos ${d.loadedDays} días: ${fmtMoney(d.metaLoaded)}</div></div>
+      <div class="kpi ${lvl}"><div class="label">Cierre estimado</div><div class="value">${fmtMoney(proj)}</div><div class="note">${fmtPct(projPct)} del objetivo de ${fmtMoney(d.objective)}</div></div>
+      <div class="kpi"><div class="label">Hay que vender por día</div><div class="value">${need>0?fmtMoney(perDayNeed):'—'}</div><div class="note">${need>0?`${d.daysLeft} días por delante · hoy promedian ${fmtMoney(perDayNow)}`:'Objetivo cumplido'}</div></div>
+    </div>
+    <div style="font-size:13.5px;line-height:1.55;color:var(--ink)">${msg}${msg2}${recTxt}</div>${warnTxt}
+  </section>`;
 }
 function alertsPanelHtml(storeId){
   const alerts = computeAlerts(storeId);
