@@ -133,9 +133,17 @@
   table.hist th, table.hist td{border:1px solid var(--border);}
   table.hist.plans-ov{table-layout:fixed;white-space:normal;}
   table.hist.plans-ov th, table.hist.plans-ov td{text-align:left;vertical-align:top;padding:8px 8px;overflow-wrap:anywhere;}
-  table.hist.plans-ov th:nth-child(1){width:78px;} table.hist.plans-ov th:nth-child(2){width:116px;}
+  table.hist.plans-ov th:nth-child(1){width:96px;} table.hist.plans-ov th:nth-child(2){width:116px;}
   table.hist.plans-ov th:nth-child(4){width:80px;} table.hist.plans-ov th:nth-child(5){width:108px;} table.hist.plans-ov th:nth-child(6){width:44px;}
   table.hist.plans-ov td:nth-child(3){color:var(--ink);} table.hist.plans-ov td:nth-child(4), table.hist.plans-ov td:nth-child(5){white-space:nowrap;}
+  table.hist.plans-ov{border-collapse:collapse;border:1px solid #b7c3cf;}
+  table.hist.plans-ov th, table.hist.plans-ov td{border:1px solid #c9d1d9 !important;}
+  table.hist.plans-ov th{background:#eaf1f6;color:var(--ink);font-size:10.5px;padding:8px 10px;vertical-align:middle;}
+  table.hist.plans-ov td{padding:9px 10px;vertical-align:middle;}
+  table.hist.plans-ov td:nth-child(1){font-weight:700;color:var(--ink);overflow-wrap:normal;}
+  table.hist.plans-ov tr:nth-child(even) td{background:#fafcfd;}
+  table.hist.plans-ov tr:hover td{background:var(--hover-bg);}
+  table.hist.plans-act td:nth-child(4), table.hist.plans-act th:nth-child(4), table.hist.plans-act td:nth-child(5), table.hist.plans-act th:nth-child(5){text-align:center;}
   table.hist.plans-act th:nth-child(4){width:108px;} table.hist.plans-act th:nth-child(5){width:44px;}
   table.hist th{text-align:right;font-size:9.8px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-soft);background:#eaf1f6;padding:8px 7px;font-weight:700;border-bottom:1.5px solid var(--border-strong);}
   table.hist th.grp{text-align:center;color:var(--ink);background:#dcebf2;font-size:10.5px;}
@@ -515,7 +523,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 20:10</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 20:20</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
