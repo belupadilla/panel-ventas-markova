@@ -523,7 +523,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 12/10/2026 · 13:00</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 12/10/2026 · 13:15</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -2480,7 +2480,12 @@ function noFollowUpPlans(storeId){
   const out=[]; const today=todayISO();
   (state.plans[storeId]||[]).forEach(p=>{
     if(p.status!=='en_curso') return;
-    const last = (p.followUps && p.followUps.length) ? p.followUps.slice().sort((a,b)=>a.date.localeCompare(b.date)).slice(-1)[0].date : p.createdAt;
+    // Cuenta como seguimiento: un comentario o cualquier carga/edición de un archivo adjunto del plan
+    const dates = [p.createdAt];
+    (p.followUps||[]).forEach(f=>{ if(f.date) dates.push(f.date); });
+    if(p.fileUpdate && p.fileUpdate.date) dates.push(p.fileUpdate.date);
+    (p.attachments||[]).forEach(a=>{ if(a.modifiedAt) dates.push(a.modifiedAt); if(a.addedAt) dates.push(a.addedAt); });
+    const last = dates.filter(Boolean).sort().slice(-1)[0];
     const d = daysBetweenInclusive(last, today) - 1;
     if(d>=3) out.push({plan:p, days:d});
   });
