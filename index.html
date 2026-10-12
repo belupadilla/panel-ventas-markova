@@ -523,7 +523,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 11/10/2026 · 20:20</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 12/10/2026 · 12:45</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -1597,6 +1597,20 @@ function xeGo(r,c){
   const td = document.querySelector('#sheetGrid td[data-r="'+r+'"][data-c="'+c+'"]');
   if(td){ td.scrollIntoView({block:'nearest',inline:'nearest'}); xeSelectOrEdit(td); }
 }
+// Fórmulas escritas en español (=SUMA(A1:A3;B1), =SI(...;...;...)) -> inglés con coma, que es como las guarda Excel y entiende el motor
+const XE_ES_EN = {'SUMA':'SUM','SI':'IF','SI.ERROR':'IFERROR','SIERROR':'IFERROR','SI.ND':'IFNA','PROMEDIO':'AVERAGE','PROMEDIO.SI':'AVERAGEIF','PROMEDIO.SI.CONJUNTO':'AVERAGEIFS','CONTAR':'COUNT','CONTARA':'COUNTA','CONTAR.BLANCO':'COUNTBLANK','CONTAR.SI':'COUNTIF','CONTAR.SI.CONJUNTO':'COUNTIFS','SUMAR.SI':'SUMIF','SUMAR.SI.CONJUNTO':'SUMIFS','SUMAPRODUCTO':'SUMPRODUCT','MAX':'MAX','MIN':'MIN','REDONDEAR':'ROUND','REDONDEAR.MAS':'ROUNDUP','REDONDEAR.MENOS':'ROUNDDOWN','TRUNCAR':'TRUNC','ENTERO':'INT','RESIDUO':'MOD','POTENCIA':'POWER','RAIZ':'SQRT','SIGNO':'SIGN','PRODUCTO':'PRODUCT','MEDIANA':'MEDIAN','K.ESIMO.MAYOR':'LARGE','K.ESIMO.MENOR':'SMALL','JERARQUIA':'RANK','Y':'AND','O':'OR','NO':'NOT','VERDADERO':'TRUE','FALSO':'FALSE','BUSCARV':'VLOOKUP','BUSCARH':'HLOOKUP','INDICE':'INDEX','COINCIDIR':'MATCH','ELEGIR':'CHOOSE','FILA':'ROW','COLUMNA':'COLUMN','ESBLANCO':'ISBLANK','ESNUMERO':'ISNUMBER','ESTEXTO':'ISTEXT','ESERROR':'ISERROR','ESERR':'ISERR','ESNOD':'ISNA','NOD':'NA','CONCATENAR':'CONCATENATE','UNIRCADENAS':'TEXTJOIN','IZQUIERDA':'LEFT','DERECHA':'RIGHT','EXTRAE':'MID','LARGO':'LEN','TEXTO':'TEXT','VALOR':'VALUE','MAYUSC':'UPPER','MINUSC':'LOWER','NOMPROPIO':'PROPER','ESPACIOS':'TRIM','LIMPIAR':'CLEAN','REPETIR':'REPT','SUSTITUIR':'SUBSTITUTE','ENCONTRAR':'FIND','HALLAR':'SEARCH','HOY':'TODAY','AHORA':'NOW','FECHA':'DATE','AÑO':'YEAR','MES':'MONTH','DIA':'DAY','DIAS':'DAYS','DIASEM':'WEEKDAY','FIN.MES':'EOMONTH','FECHA.MES':'EDATE','SUBTOTALES':'SUBTOTAL','ABS':'ABS','PI':'PI','CONTARA.SI':'COUNTIF','MAX.SI.CONJUNTO':'MAXIFS','MIN.SI.CONJUNTO':'MINIFS'};
+function xeTranslateFormula(f){
+  // trabaja fuera de textos entre comillas
+  const parts = String(f).split(/("(?:[^"]|"")*")/);
+  const hasSemi = parts.some((t,i)=>i%2===0 && t.indexOf(';')>=0);
+  return parts.map((t,i)=>{
+    if(i%2===1) return t;
+    let x = t.replace(/([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9.]*)\s*\(/gi, (m,name)=>{ const en = XE_ES_EN[name.toUpperCase()]; return en ? en+'(' : m; });
+    x = x.replace(/\b(VERDADERO|FALSO)\b(?!\s*\()/gi, (m)=>XE_ES_EN[m.toUpperCase()]);
+    if(hasSemi){ x = x.replace(/(\d),(\d)/g,'$1.$2').replace(/;/g,','); }
+    return x;
+  }).join('');
+}
 function xeCommit(){
   const ed = ED && ED.editing; if(!ed || ed.done) return;
   ed.done = true; ED.editing = null;
@@ -1605,7 +1619,7 @@ function xeCommit(){
   const cell = ED.ws.getCell(r+1,c+1);
   const isF = /^\s*=/.test(v) && v.trim().length>1;
   const wasF = !!xeFormulaOf(cell);
-  if(isF) cell.value = { formula: v.trim().slice(1) };
+  if(isF) cell.value = { formula: xeTranslateFormula(v.trim().slice(1)) };
   else cell.value = xeParse(v, cell);
   (ED.editedSet = ED.editedSet || new Set()).add(r+','+c);
   ED.dirty = true;
