@@ -523,7 +523,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 12/10/2026 · 12:45</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 12/10/2026 · 13:00</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -1464,13 +1464,91 @@ function xeSumproductParts(f){
   }
   return out;
 }
+// Funciones de Excel que el motor de cálculo no trae (MAX, MIN, COUNTA, SUMIFS, COUNTIFS, MATCH, etc.)
+let XE_FUNCS = null;
+function xeBuildFuncs(){
+  if(XE_FUNCS || typeof FormulaParser==='undefined') return XE_FUNCS;
+  const FE = FormulaParser.FormulaError;
+  const err = c=>new FE(c);
+  const xv = a=>(a && typeof a==='object' && !Array.isArray(a) && 'value' in a) ? a.value : a;
+  const flat = v=>Array.isArray(v) ? v.reduce((o,x)=>o.concat(flat(x)),[]) : [v];
+  const isNum = x=>typeof x==='number' && isFinite(x);
+  const nums = args=>{ const out=[]; args.forEach(a=>{ const v=xv(a); if(Array.isArray(v)){ flat(v).forEach(x=>{ if(isNum(x)) out.push(x); }); } else if(isNum(v)) out.push(v); else if(typeof v==='boolean' && !(a&&a.isCellRef)) out.push(v?1:0); else if(typeof v==='string' && !(a&&a.isCellRef) && v.trim()!=='' && isFinite(Number(v))) out.push(Number(v)); }); return out; };
+  const items = a=>flat(xv(a));
+  const crit = c=>{
+    if(typeof c==='boolean') return x=>x===c;
+    if(typeof c==='number') return x=>isNum(x) ? x===c : (typeof x==='string' && x.trim()!=='' && Number(x)===c);
+    const str = String(c===null||c===undefined?'':c);
+    const m = /^(<=|>=|<>|=|<|>)?([\s\S]*)$/.exec(str); const op = m[1]||'='; const rest = m[2];
+    const num = rest.trim()!=='' && isFinite(Number(rest)) ? Number(rest) : null;
+    if(num!==null){
+      return x=>{ const xn = isNum(x) ? x : (typeof x==='string' && x.trim()!=='' && isFinite(Number(x)) ? Number(x) : null);
+        if(op==='=') return xn===num; if(op==='<>') return xn!==num; if(xn===null) return false;
+        return op==='<'?xn<num: op==='>'?xn>num: op==='<='?xn<=num : xn>=num; };
+    }
+    const rx = new RegExp('^'+rest.replace(/[.+^${}()|[\]\\]/g,'\\$&').replace(/~?\*/g,t=>t==='~*'?'\\*':'[\\s\\S]*').replace(/~?\?/g,t=>t==='~?'?'\\?':'[\\s\\S]')+'$','i');
+    const txt = x=>(x===null||x===undefined) ? '' : String(x);
+    if(op==='=') return x=>rx.test(txt(x)); if(op==='<>') return x=>!rx.test(txt(x));
+    return x=>{ const a=txt(x).toLowerCase(), b=rest.toLowerCase(); return op==='<'?a<b: op==='>'?a>b: op==='<='?a<=b : a>=b; };
+  };
+  const ifIdx = (args)=>{ // args: pares (rango, criterio)
+    const pairs=[]; for(let i=0;i<args.length;i+=2) pairs.push({ arr:items(args[i]), f:crit(xv(args[i+1])) });
+    if(!pairs.length) return [];
+    const n = pairs[0].arr.length; const out=[];
+    for(let k=0;k<n;k++){ if(pairs.every(p=>p.f(p.arr[k]))) out.push(k); }
+    return out;
+  };
+  const eq = (a,b)=> (typeof a==='string'||typeof b==='string') ? String(a).toLowerCase()===String(b).toLowerCase() : a===b;
+  const agg = (code, args)=>{
+    const n = nums(args);
+    switch(Number(code)%100){
+      case 1: return n.length ? n.reduce((a,b)=>a+b,0)/n.length : err('#DIV/0!');
+      case 2: return n.length;
+      case 3: return args.reduce((c,a)=>c+items(a).filter(x=>x!==null&&x!==undefined&&x!=='').length,0);
+      case 4: return n.length?Math.max(...n):0;
+      case 5: return n.length?Math.min(...n):0;
+      case 6: return n.reduce((a,b)=>a*b,1);
+      case 9: return n.reduce((a,b)=>a+b,0);
+      default: return err('#VALUE!');
+    }
+  };
+  XE_FUNCS = {
+    MAX: (...a)=>{ const n=nums(a); return n.length?Math.max(...n):0; },
+    MIN: (...a)=>{ const n=nums(a); return n.length?Math.min(...n):0; },
+    COUNTA: (...a)=>a.reduce((c,x)=>c+items(x).filter(v=>v!==null&&v!==undefined&&v!=='').length,0),
+    COUNTBLANK: (...a)=>a.reduce((c,x)=>c+items(x).filter(v=>v===null||v===undefined||v==='').length,0),
+    MEDIAN: (...a)=>{ const n=nums(a).sort((x,y)=>x-y); if(!n.length) return err('#NUM!'); const m=n.length>>1; return n.length%2?n[m]:(n[m-1]+n[m])/2; },
+    LARGE: (r,k)=>{ const n=nums([r]).sort((x,y)=>y-x); const i=Number(xv(k)); return (i>=1&&i<=n.length)?n[i-1]:err('#NUM!'); },
+    SMALL: (r,k)=>{ const n=nums([r]).sort((x,y)=>x-y); const i=Number(xv(k)); return (i>=1&&i<=n.length)?n[i-1]:err('#NUM!'); },
+    RANK: (x,r,o)=>{ const v=xv(x); const n=nums([r]); if(!n.includes(v)) return err('#N/A'); const asc=Number(xv(o)||0)!==0; return n.filter(y=>asc?y<v:y>v).length+1; },
+    SUMIFS: (s,...c)=>{ const arr=items(s); return ifIdx(c).reduce((t,k)=>t+(isNum(arr[k])?arr[k]:0),0); },
+    COUNTIFS: (...c)=>ifIdx(c).length,
+    AVERAGEIFS: (s,...c)=>{ const arr=items(s); const v=ifIdx(c).map(k=>arr[k]).filter(isNum); return v.length?v.reduce((a,b)=>a+b,0)/v.length:err('#DIV/0!'); },
+    MAXIFS: (s,...c)=>{ const arr=items(s); const v=ifIdx(c).map(k=>arr[k]).filter(isNum); return v.length?Math.max(...v):0; },
+    MINIFS: (s,...c)=>{ const arr=items(s); const v=ifIdx(c).map(k=>arr[k]).filter(isNum); return v.length?Math.min(...v):0; },
+    MATCH: (look,rng,type)=>{
+      const v=xv(look), arr=items(rng), t=type===undefined?1:Number(xv(type));
+      if(t===0){ const i=arr.findIndex(x=>eq(x,v)); return i<0?err('#N/A'):i+1; }
+      let best=-1;
+      for(let i=0;i<arr.length;i++){ const x=arr[i]; if(typeof x!==typeof v) continue; if(t>0){ if(x<=v) best=i; else break; } else { if(x>=v) best=i; else break; } }
+      return best<0?err('#N/A'):best+1;
+    },
+    CHOOSE: (i,...vals)=>{ const k=Number(xv(i)); return (k>=1&&k<=vals.length)?xv(vals[k-1]):err('#VALUE!'); },
+    VALUE: x=>{ const v=xv(x); if(isNum(v)) return v; const n=Number(String(v).trim().replace(',','.')); return isFinite(n)&&String(v).trim()!==''?n:err('#VALUE!'); },
+    UPPER: x=>String(xv(x)===null||xv(x)===undefined?'':xv(x)).toUpperCase(),
+    SUBSTITUTE: (t,o,n,k)=>{ const s=String(xv(t)??''), a=String(xv(o)??''), b=String(xv(n)??''); if(a==='') return s; if(k===undefined) return s.split(a).join(b); let c=0, kk=Number(xv(k)); return s.split(a).reduce((r,part,i)=>{ if(i===0) return part; c++; return r+(c===kk?b:a)+part; },''); },
+    SUBTOTAL: (f,...r)=>agg(xv(f), r),
+    TEXTJOIN: (d,ign,...r)=>{ const sep=String(xv(d)??''); const skip=!!xv(ign); const v=r.reduce((o,a)=>o.concat(items(a)),[]).filter(x=>!(skip&&(x===null||x===undefined||x===''))).map(x=>x===null||x===undefined?'':String(x)); return v.join(sep); }
+  };
+  return XE_FUNCS;
+}
 // Recalcula todas las fórmulas del libro. onlyMissing=true: solo las que no traen resultado guardado.
 function xeRecalc(onlyMissing){
   if(!ED || !ED.x || typeof FormulaParser==='undefined') return 0;
   const wb = ED.wb; const cache = new Map(); const busy = new Set(); let changed = 0;
   const key = (sh,r,c)=>sh+'!'+r+':'+c;
   const shOf = n=>{ try{ return wb.getWorksheet(n); }catch(e){ return null; } };
-  const cfg = {};
+  const cfg = { functions: xeBuildFuncs() || {} };
   const pool = []; let depth = 0;
   const getParser = ()=>{ if(!pool[depth]) pool[depth] = new FormulaParser(cfg); return pool[depth]; };
   const evalCell = (sh, r, c)=>{
