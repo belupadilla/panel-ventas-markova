@@ -4169,8 +4169,14 @@ function renderPlanCard(p){
     const totalDays = daysBetweenInclusive(p.createdAt, p.targetDate);
     const elapsedDays = daysBetweenInclusive(p.createdAt, todayISO());
     if(totalDays>0 && elapsedDays >= totalDays/2){
-      const live = getIndicatorLiveValue(activeStoreId, p.indicator, p.createdAt);
-      if(live && live.raw <= p.initialValue) isStalledHalfway = true;
+      // Si el plan se mide contra el objetivo diario de la planilla, se evalúa con esa misma comparación (real vs objetivo de los días del plan)
+      const oc = planObjCompare(activeStoreId, p);
+      if(oc){
+        if(oc.real < oc.obj) isStalledHalfway = true;
+      } else {
+        const live = getIndicatorLiveValue(activeStoreId, p.indicator, p.createdAt);
+        if(live && live.raw <= p.initialValue) isStalledHalfway = true;
+      }
     }
   }
   let daysSinceFollowUp = null;
