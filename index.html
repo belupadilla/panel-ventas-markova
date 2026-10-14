@@ -129,6 +129,8 @@
 
   /* Tables — clearly defined cells throughout */
   .table-scroll{overflow-x:auto;}
+  .table-scroll.grid-scroll{overflow:auto;max-height:calc(100vh - 140px);}
+  .grid-scroll thead th{position:sticky;top:0;z-index:3;}
   table.hist{width:100%;border-collapse:collapse;margin-top:8px;font-size:12.3px;white-space:nowrap;border:1px solid var(--border-strong);}
   table.hist th, table.hist td{border:1px solid var(--border);}
   table.hist.plans-ov{table-layout:fixed;white-space:normal;}
@@ -525,7 +527,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 14/10/2026 · 12:30</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 14/10/2026 · 12:55</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -2736,8 +2738,9 @@ function renderDailyView(){
     tickets: expectedForRange(activeStoreId, rangeStart, rangeEnd, 'forecast', 'tickets'),
   };
   const growth = growthData(activeStoreId, rangeStart, rangeEnd);
-  const expAntImporte = growth.ant;
-  const crecimientoPct = growth.ant>0 ? (growth.cur/growth.ant*100) : 0;
+  const expAntImporte = expectedForRange(activeStoreId, rangeStart, rangeEnd, 'ant', 'importe');
+  const crecimientoPct = expAntImporte>0 ? (agg.sales/expAntImporte*100) : 0;
+  const dailyPct = growth.daily && growth.ant>0 ? (growth.cur/growth.ant*100) : null;
   const displayedMonthKey = rangeStart.slice(0,7);
   const monthlyForecast = getForecast(activeStoreId, displayedMonthKey);
   const rangeAsMonthKey = rangeStart.slice(0,7);
@@ -2813,7 +2816,7 @@ function renderDailyView(){
         ${progressRingHtml('Venta', ritmoPct, fc.importe>0, fc.importe>0 ? (fc.importe-agg.sales>0 ? `Faltan ${fmtMoney(fc.importe-agg.sales)}` : 'Objetivo alcanzado') : 'Sin objetivo cargado', undefined, fc.importe>0?vsObj(ritmoPct):undefined)}
         ${progressRingHtml('Artículos', ritmoArt, fc.articulos>0, fc.articulos>0 ? (fc.articulos-agg.articulos>0 ? `Faltan ${Math.round(fc.articulos-agg.articulos)}` : 'Objetivo alcanzado') : 'Sin objetivo cargado', undefined, fc.articulos>0?vsObj(ritmoArt):undefined)}
         ${progressRingHtml('Tickets', ritmoTk, fc.tickets>0, fc.tickets>0 ? (fc.tickets-agg.tickets>0 ? `Faltan ${Math.round(fc.tickets-agg.tickets)}` : 'Objetivo alcanzado') : 'Sin objetivo cargado', undefined, fc.tickets>0?vsObj(ritmoTk):undefined)}
-        ${progressRingHtml('Crecimiento', crecimientoPct, expAntImporte>0, expAntImporte>0 ? (growth.daily ? 'vs. mismo día de la semana del año anterior' : 'vs. mismo período año anterior') : 'Cargá el año anterior en Vista mensual', 86, expAntImporte>0?varStr(crecimientoPct-100):undefined)}
+        ${progressRingHtml('Crecimiento', crecimientoPct, expAntImporte>0, expAntImporte>0 ? 'vs. mismo período año anterior' + (dailyPct!==null ? ' · Diario: '+varStr(dailyPct-100) : '') : 'Cargá el año anterior en Vista mensual', 86, expAntImporte>0?varStr(crecimientoPct-100):undefined)}
       </div>
       ${isFullClosedMonth ? `
         <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:14px;">
@@ -2823,6 +2826,7 @@ function renderDailyView(){
             <div>Artículos: <strong style="color:${statusClass(ritmoArt, fc.articulos>0)==='good'?'var(--green)':statusClass(ritmoArt, fc.articulos>0)==='warn'?'var(--amber)':'var(--red)'};">${fc.articulos>0?vsObj(ritmoArt):'sin objetivo cargado'}</strong>${fc.articulos>0?` vs. objetivo (${agg.articulos} de ${Math.round(fc.articulos)})`:''}</div>
             <div>Tickets: <strong style="color:${statusClass(ritmoTk, fc.tickets>0)==='good'?'var(--green)':statusClass(ritmoTk, fc.tickets>0)==='warn'?'var(--amber)':'var(--red)'};">${fc.tickets>0?vsObj(ritmoTk):'sin objetivo cargado'}</strong>${fc.tickets>0?` vs. objetivo (${agg.tickets} de ${Math.round(fc.tickets)})`:''}</div>
             <div>Crecimiento vs. año anterior: <strong style="color:${expAntImporte>0?(crecimientoPct>100?'var(--green)':crecimientoPct>=50?'var(--amber)':'var(--red)'):'var(--muted)'};">${expAntImporte>0?varStr(crecimientoPct-100):'sin año anterior cargado'}</strong></div>
+            ${dailyPct!==null?`<div>Crecimiento diario (mismo día de la semana): <strong style="color:${dailyPct>100?'var(--green)':dailyPct>=50?'var(--amber)':'var(--red)'};">${varStr(dailyPct-100)}</strong></div>`:''}
           </div>
         </div>
       ` : ''}
@@ -2831,7 +2835,7 @@ function renderDailyView(){
     <section class="panel">
       <h2>Planilla del período <span class="n">${escapeHtml(store.name)}</span></h2>
       <p class="grid-hint">Fecha y meta ya cargadas — completá Venta, Artículos y Tickets día a día. La variación se calcula sola.</p>
-      ${rangeEntries.length ? `<div class="table-scroll"><table class="hist grid"><thead><tr>
+      ${rangeEntries.length ? `<div class="table-scroll grid-scroll"><table class="hist grid"><thead><tr>
         <th>Fecha</th><th>Día</th><th>Meta</th><th>Venta</th><th>Var Meta</th><th>Artículos</th><th>Tickets</th><th>TkProm</th><th>ArtxTk</th>${hasPyDaily(activeStoreId)?'<th class="py">Mismo día año ant.</th><th class="py">Venta año ant.</th><th class="py">Var Venta</th><th class="py">Art. año ant.</th><th class="py">Var Art.</th><th class="py">Tickets año ant.</th><th class="py">Var Tickets</th>':''}<th></th>
       </tr></thead><tbody id="gridBody">
       ${rangeEntries.map(e=>gridRowHtml(e)).join('')}
@@ -4477,7 +4481,7 @@ function renderProgresoLocales(){
       articulos: expectedForRange(s.id, rs, re, 'forecast', 'articulos'),
       tickets: expectedForRange(s.id, rs, re, 'forecast', 'tickets'),
     };
-    const gr = growthData(s.id, rs, re); const expAntImporte = gr.ant;
+    const gr = growthData(s.id, rs, re); const expAntImporte = expectedForRange(s.id, rs, re,'ant','importe'); const dailyPct = gr.daily && gr.ant>0 ? gr.cur/gr.ant*100 : null;
     const monthlyForecast = getForecast(s.id, mKey);
     const cumMeta = agg.meta>0 ? (agg.sales/agg.meta*100) : 0;
     const loadedDays = rangeEntries.filter(e=>e.sales!==null && e.sales!==undefined).length;
@@ -4486,7 +4490,7 @@ function renderProgresoLocales(){
       ritmoPct: fc.importe>0 ? (agg.sales/fc.importe*100) : 0, fcImporte:fc.importe,
       ritmoArt: fc.articulos>0 ? (agg.articulos/fc.articulos*100) : 0, fcArticulos:fc.articulos,
       ritmoTk: fc.tickets>0 ? (agg.tickets/fc.tickets*100) : 0, fcTickets:fc.tickets,
-      crecimientoPct: expAntImporte>0 ? (gr.cur/expAntImporte*100) : 0, expAntImporte, growthDaily: gr.daily,
+      crecimientoPct: expAntImporte>0 ? (agg.sales/expAntImporte*100) : 0, expAntImporte, dailyPct,
     };
   });
 
@@ -4519,7 +4523,7 @@ function renderProgresoLocales(){
             ${progressRingHtml('Venta', sm.ritmoPct, sm.fcImporte>0, sm.fcImporte>0 ? (sm.fcImporte-sm.agg.sales>0 ? `Faltan ${fmtMoney(sm.fcImporte-sm.agg.sales)}` : 'Objetivo alcanzado') : 'Sin objetivo cargado', 56, sm.fcImporte>0?vsObj(sm.ritmoPct):undefined)}
             ${progressRingHtml('Artículos', sm.ritmoArt, sm.fcArticulos>0, sm.fcArticulos>0 ? (sm.fcArticulos-sm.agg.articulos>0 ? `Faltan ${Math.round(sm.fcArticulos-sm.agg.articulos)}` : 'Objetivo alcanzado') : 'Sin objetivo cargado', 56, sm.fcArticulos>0?vsObj(sm.ritmoArt):undefined)}
             ${progressRingHtml('Tickets', sm.ritmoTk, sm.fcTickets>0, sm.fcTickets>0 ? (sm.fcTickets-sm.agg.tickets>0 ? `Faltan ${Math.round(sm.fcTickets-sm.agg.tickets)}` : 'Objetivo alcanzado') : 'Sin objetivo cargado', 56, sm.fcTickets>0?vsObj(sm.ritmoTk):undefined)}
-            ${progressRingHtml('Crecimiento', sm.crecimientoPct, sm.expAntImporte>0, sm.expAntImporte>0 ? (sm.growthDaily ? 'vs. mismo día de la semana del año anterior' : 'vs. mismo período año anterior') : 'Cargá el año anterior en Vista mensual', 56, sm.expAntImporte>0?varStr(sm.crecimientoPct-100):undefined)}
+            ${progressRingHtml('Crecimiento', sm.crecimientoPct, sm.expAntImporte>0, sm.expAntImporte>0 ? 'vs. mismo período año anterior' + (sm.dailyPct!=null ? ' · Diario: '+varStr(sm.dailyPct-100) : '') : 'Cargá el año anterior en Vista mensual', 56, sm.expAntImporte>0?varStr(sm.crecimientoPct-100):undefined)}
           </div>
         </div>
       `).join('') : `<div class="empty" style="padding:30px 0;font-size:14px;">Todavía no agregaste locales.</div>`}
