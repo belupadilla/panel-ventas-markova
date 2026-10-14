@@ -226,6 +226,8 @@
   .cell-input:focus{border-color:var(--ink);background:#fff;outline:none;}
   .cell-input.meta-input{color:var(--ink-soft);background:#fafafa;}
   td.derived{color:var(--ink-soft);}
+  th.py{background:#ffe9d6 !important;color:#8a4b00 !important;} td.py{background:#fff8f1;color:#6b4a2b;white-space:nowrap;} td.py.pos{color:var(--green);font-weight:700;} td.py.neg{color:var(--red);font-weight:700;} td.py.warn{color:var(--amber);font-weight:700;}
+  tfoot.pyfoot td{font-weight:800;background:#e3edf3;border-top:2px solid var(--ink);padding:7px 6px;text-align:right;white-space:nowrap;} tfoot.pyfoot td.py{background:#ffe9d6;color:#8a4b00;}
   .grid-hint{font-size:12px;color:var(--muted);margin:0 0 4px;}
 
   .bar-chart{display:flex;align-items:flex-end;gap:5px;height:210px;padding:10px 4px 0;overflow-x:auto;}
@@ -523,7 +525,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 13/10/2026 · 17:30</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 14/10/2026 · 12:30</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -583,7 +585,7 @@
 
 <script>
 const STORAGE_KEY = 'markova-sales-data-v4';
-let state = { stores: [], entries: {}, forecasts: {}, priorYear: {}, plans: {} };
+let state = { stores: [], entries: {}, forecasts: {}, priorYear: {}, priorDaily: {}, plans: {} };
 let activeStoreId = null;
 let compareMode = false;
 let overviewMode = false;
@@ -690,11 +692,11 @@ function vsObj(pct){ return varStr(pct-100); }
 
 // ---- Persistencia compartida (db) con respaldo local ----
 let DB=null, canWrite=true, lastSaved={}, writeChain=Promise.resolve(), remoteDeferred=false, pendingWrites=0;
-const COLS=['stores','entries','fin','plans'];
-const snaps={stores:{},entries:{},fin:{},plans:{}};
+const COLS=['stores','entries','fin','plans','pyd'];
+const snaps={stores:{},entries:{},fin:{},plans:{},pyd:{}};
 function normalizeState(){
   if(!state.stores) state.stores=[]; if(!state.entries) state.entries={}; if(!state.forecasts) state.forecasts={};
-  if(!state.priorYear) state.priorYear={}; if(!state.plans) state.plans={};
+  if(!state.priorYear) state.priorYear={}; if(!state.plans) state.plans={}; if(!state.priorDaily) state.priorDaily={};
 }
 function docsFromState(st){
   const d={};
@@ -703,11 +705,12 @@ function docsFromState(st){
     d['entries/'+id]={list:(st.entries||{})[id]||[]};
     d['fin/'+id]={forecasts:(st.forecasts||{})[id]||{},priorYear:(st.priorYear||{})[id]||{}};
     d['plans/'+id]={list:(st.plans||{})[id]||[]};
+    const pdd=(st.priorDaily||{})[id]||{}; if(Object.keys(pdd).length || (snaps.pyd && snaps.pyd[id])) d['pyd/'+id]={days:pdd}; // ventas diarias del año anterior (colección aparte)
   });
   return d;
 }
 function stateFromSnaps(){
-  const st={stores:[],entries:{},forecasts:{},priorYear:{},plans:{}};
+  const st={stores:[],entries:{},forecasts:{},priorYear:{},priorDaily:{},plans:{}};
   Object.keys(snaps.stores).forEach(id=>{
     const info=snaps.stores[id].info; if(!info) return;
     st.stores.push(info);
@@ -715,6 +718,7 @@ function stateFromSnaps(){
     st.forecasts[id]=(snaps.fin[id]||{}).forecasts||{};
     st.priorYear[id]=(snaps.fin[id]||{}).priorYear||{};
     st.plans[id]=(snaps.plans[id]||{}).list||[];
+    st.priorDaily[id]=(snaps.pyd[id]||{}).days||{};
   });
   return st;
 }
@@ -1919,6 +1923,8 @@ async function mergeBackup(file){
       Object.keys((obj.forecasts||{})[id]||{}).forEach(mo=>{ if(!fc[mo]){ fc[mo]=obj.forecasts[id][mo]; addedMonths++; } });
       const py=(state.priorYear[id]=state.priorYear[id]||{});
       Object.keys((obj.priorYear||{})[id]||{}).forEach(mo=>{ if(!py[mo]) py[mo]=obj.priorYear[id][mo]; });
+      const pd=(state.priorDaily[id]=state.priorDaily[id]||{});
+      Object.keys((obj.priorDaily||{})[id]||{}).forEach(k=>{ if(!pd[k]) pd[k]=obj.priorDaily[id][k]; });
       const pl=(state.plans[id]=state.plans[id]||[]);
       ((obj.plans||{})[id]||[]).forEach(fp=>{ if(!pl.find(x=>x.id===fp.id)){ pl.push(fp); addedPlans++; } });
     });
@@ -1930,7 +1936,7 @@ async function importBackup(file){
   try{
     const obj=JSON.parse(await file.text());
     if(!obj || !Array.isArray(obj.stores)) throw new Error('formato');
-    state={stores:obj.stores,entries:obj.entries||{},forecasts:obj.forecasts||{},priorYear:obj.priorYear||{},plans:obj.plans||{}};
+    state={stores:obj.stores,entries:obj.entries||{},forecasts:obj.forecasts||{},priorYear:obj.priorYear||{},priorDaily:obj.priorDaily||{},plans:obj.plans||{}};
     normalizeState();
     activeStoreId=state.stores[0]?state.stores[0].id:null; overviewMode=true;
     await saveState(); render(); showToast('Datos importados: '+state.stores.length+' locales');
@@ -1952,6 +1958,68 @@ function aggEntries(entries){
   a.tkProm = a.tickets>0 ? a.sales/a.tickets : 0;
   a.artXTk = a.tickets>0 ? a.articulos/a.tickets : 0;
   return a;
+}
+// ---- Año anterior por día: cada día se compara con el mismo día de la semana del año anterior (364 días antes) ----
+function pyData(storeId){ return (state.priorDaily && state.priorDaily[storeId]) || {}; }
+function hasPyDaily(storeId){ return Object.keys(pyData(storeId)).length>0; }
+function pyIso(iso){ return addDaysISO(iso,-364); }
+function pyDay(storeId, iso){ const r=pyData(storeId)[pyIso(iso)]; return r ? { date:pyIso(iso), sales:Number(r[0])||0, articulos:Number(r[1])||0, tickets:Number(r[2])||0 } : null; }
+function isLoadedDay(e){ return e && e.sales!==null && e.sales!==undefined && ((Number(e.sales)||0)>0 || (Number(e.tickets)||0)>0); }
+function pyMatched(storeId, entries){
+  const out={ cur:{sales:0,articulos:0,tickets:0}, ant:{sales:0,articulos:0,tickets:0}, days:0 };
+  (entries||[]).forEach(e=>{ if(!isLoadedDay(e)) return; const p=pyDay(storeId,e.date); if(!p) return; out.days++;
+    out.cur.sales+=Number(e.sales)||0; out.cur.articulos+=Number(e.articulos)||0; out.cur.tickets+=Number(e.tickets)||0;
+    out.ant.sales+=p.sales; out.ant.articulos+=p.articulos; out.ant.tickets+=p.tickets; });
+  return out;
+}
+// Crecimiento vs. año anterior: con datos diarios compara los mismos días; si no hay, usa el total mensual repartido por día
+function growthData(storeId, start, end){
+  const ents = entriesInRange(storeId, start, end);
+  if(hasPyDaily(storeId)){ const m=pyMatched(storeId, ents); if(m.days>0 && m.ant.sales>0) return { cur:m.cur.sales, ant:m.ant.sales, daily:true, days:m.days }; }
+  return { cur:aggEntries(ents).sales, ant:expectedForRange(storeId, start, end, 'ant', 'importe'), daily:false };
+}
+// Año anterior de un mes para la vista mensual: con datos diarios, solo los días que ya tienen venta este año
+function antForMonth(storeId, m){
+  if(hasPyDaily(storeId)){ const mm=pyMatched(storeId, entriesForMonth(storeId, m)); if(mm.days>0) return { importe:mm.ant.sales, articulos:mm.ant.articulos, tickets:mm.ant.tickets, daily:true }; }
+  return getAnt(storeId, m);
+}
+function parsePyNumber(x){
+  if(x===null||x===undefined) return 0;
+  if(typeof x==='number') return isFinite(x)?Math.round(x):0;
+  let t=String(x).replace(/[^\d.,\-]/g,''); if(!t) return 0;
+  const hasDot=t.includes('.'), hasCom=t.includes(',');
+  if(hasDot&&hasCom){ if(t.lastIndexOf(',')>t.lastIndexOf('.')) t=t.replace(/\./g,'').replace(',','.'); else t=t.replace(/,/g,''); }
+  else if(hasCom){ t = /^-?\d{1,3}(,\d{3})+$/.test(t) ? t.replace(/,/g,'') : t.replace(',','.'); }
+  else if(hasDot){ if(/^-?\d{1,3}(\.\d{3})+$/.test(t)) t=t.replace(/\./g,''); }
+  const n=Number(t); return isFinite(n)?Math.round(n):0;
+}
+// Línea: fecha [día] venta artículos tickets
+function parsePyLine(line){
+  if(!line || !line.trim()) return null;
+  if(isHeaderLine(line)) return 'header';
+  const cols = splitCols(line).map(c=>c.trim()).filter(c=>c!=='');
+  if(cols.length<2) return null;
+  const date = parseDateFlexible(cols[0]); if(!date) return null;
+  let i=1; if(cols[1] && /^[A-Za-zÁÉÍÓÚáéíóúñÑ]+$/.test(cols[1])) i=2;
+  if(cols.length<=i) return null;
+  return { date, vals:[ parsePyNumber(cols[i]), parsePyNumber(cols[i+1]), parsePyNumber(cols[i+2]) ] };
+}
+function loadPyLines(storeId, lines){
+  const store=(state.priorDaily[storeId]=state.priorDaily[storeId]||{});
+  let ok=0, fail=0, minD=null, maxD=null;
+  lines.forEach(l=>{ const r=parsePyLine(l); if(r==='header'||r===null&&!String(l).trim()) return; if(!r){ fail++; return; }
+    store[r.date]=r.vals; ok++; if(!minD||r.date<minD) minD=r.date; if(!maxD||r.date>maxD) maxD=r.date; });
+  return { ok, fail, minD, maxD };
+}
+async function pyFileToLines(file){
+  if(typeof XLSX==='undefined') throw new Error('sin lector de Excel');
+  const wb = XLSX.read(await file.arrayBuffer(), { type:'array', cellDates:true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, cellDates:true, defval:'' });
+  return rows.map(r=>r.map(c=>{
+    if(c instanceof Date) return c.getUTCFullYear()+'-'+String(c.getUTCMonth()+1).padStart(2,'0')+'-'+String(c.getUTCDate()).padStart(2,'0');
+    return c===null||c===undefined ? '' : String(c);
+  }).join('\t'));
 }
 function getAnt(storeId, mKey){
   const raw = (state.priorYear[storeId]||{})[mKey];
@@ -2362,7 +2430,7 @@ function renderStoreList(){
       const store = state.stores.find(s=>s.id===id);
       showConfirmDialog(`¿Eliminar "${store.name}" y todos sus datos? No se puede deshacer.`, async ()=>{
         state.stores = state.stores.filter(s=>s.id!==id);
-        delete state.entries[id]; delete state.forecasts[id]; delete state.priorYear[id]; delete state.plans[id];
+        delete state.entries[id]; delete state.forecasts[id]; delete state.priorYear[id]; delete state.priorDaily[id]; delete state.plans[id];
         if(activeStoreId===id) activeStoreId = state.stores.length ? state.stores[0].id : null;
         await saveState(); render();
       });
@@ -2418,7 +2486,7 @@ async function addStore(){
     }
     const id = uid();
     state.stores.push({id,name});
-    state.entries[id]=[]; state.forecasts[id]={}; state.priorYear[id]={}; state.plans[id]=[];
+    state.entries[id]=[]; state.forecasts[id]={}; state.priorYear[id]={}; state.priorDaily[id]={}; state.plans[id]=[];
     activeStoreId = id; compareMode=false;
     lastAddedStoreName = name; lastAddedStoreAt = now;
     await saveState(); render();
@@ -2667,8 +2735,9 @@ function renderDailyView(){
     articulos: expectedForRange(activeStoreId, rangeStart, rangeEnd, 'forecast', 'articulos'),
     tickets: expectedForRange(activeStoreId, rangeStart, rangeEnd, 'forecast', 'tickets'),
   };
-  const expAntImporte = expectedForRange(activeStoreId, rangeStart, rangeEnd, 'ant', 'importe');
-  const crecimientoPct = expAntImporte>0 ? (agg.sales/expAntImporte*100) : 0;
+  const growth = growthData(activeStoreId, rangeStart, rangeEnd);
+  const expAntImporte = growth.ant;
+  const crecimientoPct = growth.ant>0 ? (growth.cur/growth.ant*100) : 0;
   const displayedMonthKey = rangeStart.slice(0,7);
   const monthlyForecast = getForecast(activeStoreId, displayedMonthKey);
   const rangeAsMonthKey = rangeStart.slice(0,7);
@@ -2744,7 +2813,7 @@ function renderDailyView(){
         ${progressRingHtml('Venta', ritmoPct, fc.importe>0, fc.importe>0 ? (fc.importe-agg.sales>0 ? `Faltan ${fmtMoney(fc.importe-agg.sales)}` : 'Objetivo alcanzado') : 'Sin objetivo cargado', undefined, fc.importe>0?vsObj(ritmoPct):undefined)}
         ${progressRingHtml('Artículos', ritmoArt, fc.articulos>0, fc.articulos>0 ? (fc.articulos-agg.articulos>0 ? `Faltan ${Math.round(fc.articulos-agg.articulos)}` : 'Objetivo alcanzado') : 'Sin objetivo cargado', undefined, fc.articulos>0?vsObj(ritmoArt):undefined)}
         ${progressRingHtml('Tickets', ritmoTk, fc.tickets>0, fc.tickets>0 ? (fc.tickets-agg.tickets>0 ? `Faltan ${Math.round(fc.tickets-agg.tickets)}` : 'Objetivo alcanzado') : 'Sin objetivo cargado', undefined, fc.tickets>0?vsObj(ritmoTk):undefined)}
-        ${progressRingHtml('Crecimiento', crecimientoPct, expAntImporte>0, expAntImporte>0 ? 'vs. mismo período año anterior' : 'Cargá el año anterior en Vista mensual', 86, expAntImporte>0?varStr(crecimientoPct-100):undefined)}
+        ${progressRingHtml('Crecimiento', crecimientoPct, expAntImporte>0, expAntImporte>0 ? (growth.daily ? 'vs. mismo día de la semana del año anterior' : 'vs. mismo período año anterior') : 'Cargá el año anterior en Vista mensual', 86, expAntImporte>0?varStr(crecimientoPct-100):undefined)}
       </div>
       ${isFullClosedMonth ? `
         <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:14px;">
@@ -2763,10 +2832,10 @@ function renderDailyView(){
       <h2>Planilla del período <span class="n">${escapeHtml(store.name)}</span></h2>
       <p class="grid-hint">Fecha y meta ya cargadas — completá Venta, Artículos y Tickets día a día. La variación se calcula sola.</p>
       ${rangeEntries.length ? `<div class="table-scroll"><table class="hist grid"><thead><tr>
-        <th>Fecha</th><th>Día</th><th>Meta</th><th>Venta</th><th>Var Meta</th><th>Artículos</th><th>Tickets</th><th>TkProm</th><th>ArtxTk</th><th></th>
+        <th>Fecha</th><th>Día</th><th>Meta</th><th>Venta</th><th>Var Meta</th><th>Artículos</th><th>Tickets</th><th>TkProm</th><th>ArtxTk</th>${hasPyDaily(activeStoreId)?'<th class="py">Mismo día año ant.</th><th class="py">Venta año ant.</th><th class="py">Var Venta</th><th class="py">Art. año ant.</th><th class="py">Var Art.</th><th class="py">Tickets año ant.</th><th class="py">Var Tickets</th>':''}<th></th>
       </tr></thead><tbody id="gridBody">
       ${rangeEntries.map(e=>gridRowHtml(e)).join('')}
-      </tbody></table></div>` : `<div class="empty" style="padding:30px 0;font-size:14px;">Todavía no hay días generados en este rango. Usá "Generar planilla" arriba.</div>`}
+      </tbody>${hasPyDaily(activeStoreId)?`<tfoot class="pyfoot" id="pyFootBody">${pyFootHtml(activeStoreId, rangeEntries)}</tfoot>`:''}</table></div>` : `<div class="empty" style="padding:30px 0;font-size:14px;">Todavía no hay días generados en este rango. Usá "Generar planilla" arriba.</div>`}
     </section>
 
     <section class="panel">
@@ -2792,6 +2861,22 @@ Un solo dato (ej. Tickets):
 02/07/2026	17"></textarea>
       <div style="margin-top:10px;display:flex;gap:10px;">
         <button class="btn solid" id="bulkLoadBtn">Procesar y cargar</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Año anterior por día <span class="n">${escapeHtml(store.name)}</span></h2>
+      <p class="grid-hint">
+        Cargá las ventas diarias del año anterior: una fila por día con <b>Fecha, Venta, Artículos y Tickets</b>. Podés pegarlas desde Excel o subir el archivo. Cada día de este año se compara con el <b>mismo día de la semana</b> del año anterior (por ejemplo, miércoles 14/10/2026 contra miércoles 15/10/2025), y se ve en la planilla de arriba.
+      </p>
+      ${(()=>{ const d=Object.keys(pyData(activeStoreId)).sort(); if(!d.length) return '<p class="grid-hint" style="color:var(--amber)">Todavía no hay días del año anterior cargados en este local.</p>'; const f=x=>x.split('-').reverse().join('/'); return `<p class="grid-hint" style="color:var(--green)"><b>${d.length} días cargados</b> del año anterior (${f(d[0])} al ${f(d[d.length-1])}). Si cargás una fecha que ya existe, se actualiza.</p>`; })()}
+      <textarea id="pyArea" rows="5" style="width:100%;border:1px solid var(--border);background:var(--bg);border-radius:8px;padding:10px;font-family:'Inter',sans-serif;font-size:12.5px;resize:vertical;" placeholder="Fecha	Venta	Artículos	Tickets
+01/10/2025	8132638	74	31
+02/10/2025	9074691	82	34"></textarea>
+      <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <button class="btn solid" id="pyLoadBtn">Procesar y cargar</button>
+        <label class="btn" for="pyFile" style="cursor:pointer;">Subir Excel o CSV</label><input type="file" id="pyFile" accept=".xlsx,.xls,.csv" hidden>
+        ${hasPyDaily(activeStoreId)?'<button class="btn" id="pyClearBtn" style="color:var(--red);">Borrar año anterior de este local</button>':''}
       </div>
     </section>
 
@@ -2877,6 +2962,31 @@ Un solo dato (ej. Tickets):
     if(fail>0) msg += `, ${fail} línea(s) no se pudieron leer`;
     showToast(msg);
   });
+  const pyDone = (r)=>{
+    if(r.ok>0 && r.minD){ /* nada más que guardar */ }
+    return `${r.ok} día(s) del año anterior cargados`+(r.fail>0?`, ${r.fail} línea(s) no se pudieron leer`:'');
+  };
+  document.getElementById('pyLoadBtn').addEventListener('click', async ()=>{
+    const lines = document.getElementById('pyArea').value.split('\n').map(l=>l.trim()).filter(Boolean);
+    const r = loadPyLines(activeStoreId, lines);
+    if(r.ok>0){ await saveState(); }
+    render(); showToast(r.ok>0 ? pyDone(r) : 'No se pudo leer ninguna línea. Revisá que cada fila empiece con la fecha (dd/mm/aaaa).');
+  });
+  document.getElementById('pyFile').addEventListener('change', async (ev)=>{
+    const f = ev.target.files && ev.target.files[0]; if(!f) return;
+    try{
+      const lines = f.name.toLowerCase().endsWith('.csv') ? (await f.text()).split('\n').map(l=>l.trim()).filter(Boolean) : await pyFileToLines(f);
+      const r = loadPyLines(activeStoreId, lines);
+      if(r.ok>0){ await saveState(); }
+      render(); showToast(r.ok>0 ? pyDone(r) : 'No se encontraron filas con fecha en el archivo.');
+    }catch(e){ showToast('No se pudo leer el archivo.'); }
+  });
+  const pyClear = document.getElementById('pyClearBtn');
+  if(pyClear) pyClear.addEventListener('click', ()=>{
+    showConfirmDialog('¿Borrar las ventas diarias del año anterior de este local? Las ventas de este año no se tocan.', async ()=>{
+      state.priorDaily[activeStoreId] = {}; await saveState(); render(); showToast('Año anterior diario borrado');
+    });
+  });
   renderDailyChart(rangeEntries);
   animateKpiFills();
 }
@@ -2912,6 +3022,35 @@ function parseCellCurrency(str){
   const cleaned = String(str).replace(/[^\d-]/g,'');
   return cleaned===''||cleaned==='-' ? null : Number(cleaned);
 }
+function pyVarCell(cur, ant, key){
+  const v = (cur!==null && cur!==undefined && ant>0) ? (cur/ant-1)*100 : null;
+  return `<td class="py derived ${v!==null?varClass(v):''}" data-derived="${key}">${varStr(v)}</td>`;
+}
+function pyCellsHtml(storeId, e){
+  if(!hasPyDaily(storeId)) return '';
+  const p = pyDay(storeId, e.date);
+  const loaded = e.sales!==null && e.sales!==undefined;
+  if(!p) return `<td class="py">—</td><td class="py">—</td><td class="py">—</td><td class="py">—</td><td class="py">—</td><td class="py">—</td><td class="py">—</td>`;
+  const lbl = dayName(p.date)+' '+p.date.split('-').reverse().slice(0,2).join('/')+'/'+p.date.slice(2,4);
+  return `<td class="py">${lbl}</td><td class="py">${fmtMoney(p.sales)}</td>${pyVarCell(loaded?e.sales:null,p.sales,'pyvs-'+e.id)}
+    <td class="py">${p.articulos}</td>${pyVarCell(e.articulos,p.articulos,'pyva-'+e.id)}
+    <td class="py">${p.tickets}</td>${pyVarCell(e.tickets,p.tickets,'pyvt-'+e.id)}`;
+}
+function pyFootHtml(storeId, entries){
+  if(!hasPyDaily(storeId)) return '';
+  const agg = aggEntries(entries); const m = pyMatched(storeId, entries);
+  const vr = (a,b)=>{ const v=b>0?(a/b-1)*100:null; return `<td class="py ${v!==null?varClass(v):''}">${varStr(v)}</td>`; };
+  return `<tr><td style="text-align:left">TOTAL</td><td></td><td>${fmtMoney(agg.meta)}</td><td>${fmtMoney(agg.sales)}</td><td></td><td>${agg.articulos}</td><td>${agg.tickets}</td><td>${agg.tickets>0?fmtMoney(agg.tkProm):'—'}</td><td>${agg.tickets>0?fmtNum(agg.artXTk):'—'}</td>
+    <td class="py" style="text-align:left">mismos días ${m.days?'('+m.days+')':''}</td><td class="py">${fmtMoney(m.ant.sales)}</td>${vr(m.cur.sales,m.ant.sales)}
+    <td class="py">${m.ant.articulos}</td>${vr(m.cur.articulos,m.ant.articulos)}<td class="py">${m.ant.tickets}</td>${vr(m.cur.tickets,m.ant.tickets)}<td></td></tr>`;
+}
+function refreshPyRow(entry){
+  if(!hasPyDaily(activeStoreId)) return;
+  const p = pyDay(activeStoreId, entry.date);
+  const set=(key,cur,ant)=>{ const el=document.querySelector(`[data-derived="${key}"]`); if(!el) return; const v=(cur!==null&&cur!==undefined&&ant>0)?(cur/ant-1)*100:null; el.textContent=varStr(v); el.className='py derived '+(v!==null?varClass(v):''); };
+  if(p){ set('pyvs-'+entry.id, entry.sales, p.sales); set('pyva-'+entry.id, entry.articulos, p.articulos); set('pyvt-'+entry.id, entry.tickets, p.tickets); }
+  const foot=document.getElementById('pyFootBody'); if(foot) foot.innerHTML = pyFootHtml(activeStoreId, entriesInRange(activeStoreId, rangeStart, rangeEnd));
+}
 function gridRowHtml(e){
   const tk = (e.tickets>0 && e.sales!==null && e.sales!==undefined) ? e.sales/e.tickets : null;
   const axt = (e.tickets>0 && e.articulos!==null && e.articulos!==undefined) ? e.articulos/e.tickets : null;
@@ -2927,6 +3066,7 @@ function gridRowHtml(e){
     <td><input type="number" class="cell-input" data-id="${e.id}" data-field="tickets" value="${val(e.tickets)}" placeholder="—"></td>
     <td class="derived" data-derived="tk-${e.id}">${tk!==null?fmtMoney(tk):'—'}</td>
     <td class="derived" data-derived="axt-${e.id}">${axt!==null?fmtNum(axt):'—'}</td>
+    ${pyCellsHtml(activeStoreId, e)}
     <td class="rm" data-rm="${e.id}">Eliminar</td>
   </tr>`;
 }
@@ -2987,6 +3127,7 @@ function recomputeRow(entry){
   if(tkEl) tkEl.textContent = tk!==null ? fmtMoney(tk) : '—';
   if(axtEl) axtEl.textContent = axt!==null ? fmtNum(axt) : '—';
   if(vmEl){ vmEl.textContent = varStr(vm); vmEl.className = 'derived '+(vm!==null?varClass(vm):''); }
+  refreshPyRow(entry);
 }
 
 function recomputeTotals(){
@@ -3144,7 +3285,7 @@ function renderMonthlyView(){
   const rows = months.map(m=>{
     const agg = aggEntries(entriesForMonth(activeStoreId, m));
     const pron = getForecast(activeStoreId, m).importe;
-    const ant = getAnt(activeStoreId, m);
+    const ant = antForMonth(activeStoreId, m);
     const antTkProm = ant.tickets>0 ? ant.importe/ant.tickets : 0;
     const antArtXTk = ant.tickets>0 ? ant.articulos/ant.tickets : 0;
     return {
@@ -3203,6 +3344,7 @@ function renderMonthlyView(){
 
     <section class="panel">
       <h2>Resumen mensual <select id="yearSelect" style="font-size:13px;font-weight:800;border:1px solid var(--border);border-radius:5px;padding:2px 6px;">${allYears.map(y=>`<option value="${y}" ${y===viewYear?'selected':''}>${y}</option>`).join('')}</select> <span class="n">${escapeHtml(store.name)}</span> <button class="btn" type="button" id="copyMonthlyBtn" style="margin-left:auto;font-size:11.5px;padding:5px 10px;">Copiar tabla</button></h2>
+      ${hasPyDaily(activeStoreId) ? '<p class="grid-hint">Con las ventas diarias del año anterior cargadas, cada mes se compara contra el mismo día de la semana del año anterior, solo en los días que ya tienen venta este año.</p>' : ''}
       ${rows.length ? `<div class="table-scroll"><table class="hist" id="monthlyTable"><thead>
       <tr>
         <th rowspan="2">Mes</th>
@@ -4335,7 +4477,7 @@ function renderProgresoLocales(){
       articulos: expectedForRange(s.id, rs, re, 'forecast', 'articulos'),
       tickets: expectedForRange(s.id, rs, re, 'forecast', 'tickets'),
     };
-    const expAntImporte = expectedForRange(s.id, rs, re, 'ant', 'importe');
+    const gr = growthData(s.id, rs, re); const expAntImporte = gr.ant;
     const monthlyForecast = getForecast(s.id, mKey);
     const cumMeta = agg.meta>0 ? (agg.sales/agg.meta*100) : 0;
     const loadedDays = rangeEntries.filter(e=>e.sales!==null && e.sales!==undefined).length;
@@ -4344,7 +4486,7 @@ function renderProgresoLocales(){
       ritmoPct: fc.importe>0 ? (agg.sales/fc.importe*100) : 0, fcImporte:fc.importe,
       ritmoArt: fc.articulos>0 ? (agg.articulos/fc.articulos*100) : 0, fcArticulos:fc.articulos,
       ritmoTk: fc.tickets>0 ? (agg.tickets/fc.tickets*100) : 0, fcTickets:fc.tickets,
-      crecimientoPct: expAntImporte>0 ? (agg.sales/expAntImporte*100) : 0, expAntImporte,
+      crecimientoPct: expAntImporte>0 ? (gr.cur/expAntImporte*100) : 0, expAntImporte, growthDaily: gr.daily,
     };
   });
 
@@ -4377,7 +4519,7 @@ function renderProgresoLocales(){
             ${progressRingHtml('Venta', sm.ritmoPct, sm.fcImporte>0, sm.fcImporte>0 ? (sm.fcImporte-sm.agg.sales>0 ? `Faltan ${fmtMoney(sm.fcImporte-sm.agg.sales)}` : 'Objetivo alcanzado') : 'Sin objetivo cargado', 56, sm.fcImporte>0?vsObj(sm.ritmoPct):undefined)}
             ${progressRingHtml('Artículos', sm.ritmoArt, sm.fcArticulos>0, sm.fcArticulos>0 ? (sm.fcArticulos-sm.agg.articulos>0 ? `Faltan ${Math.round(sm.fcArticulos-sm.agg.articulos)}` : 'Objetivo alcanzado') : 'Sin objetivo cargado', 56, sm.fcArticulos>0?vsObj(sm.ritmoArt):undefined)}
             ${progressRingHtml('Tickets', sm.ritmoTk, sm.fcTickets>0, sm.fcTickets>0 ? (sm.fcTickets-sm.agg.tickets>0 ? `Faltan ${Math.round(sm.fcTickets-sm.agg.tickets)}` : 'Objetivo alcanzado') : 'Sin objetivo cargado', 56, sm.fcTickets>0?vsObj(sm.ritmoTk):undefined)}
-            ${progressRingHtml('Crecimiento', sm.crecimientoPct, sm.expAntImporte>0, sm.expAntImporte>0 ? 'vs. mismo período año anterior' : 'Cargá el año anterior en Vista mensual', 56, sm.expAntImporte>0?varStr(sm.crecimientoPct-100):undefined)}
+            ${progressRingHtml('Crecimiento', sm.crecimientoPct, sm.expAntImporte>0, sm.expAntImporte>0 ? (sm.growthDaily ? 'vs. mismo día de la semana del año anterior' : 'vs. mismo período año anterior') : 'Cargá el año anterior en Vista mensual', 56, sm.expAntImporte>0?varStr(sm.crecimientoPct-100):undefined)}
           </div>
         </div>
       `).join('') : `<div class="empty" style="padding:30px 0;font-size:14px;">Todavía no agregaste locales.</div>`}
