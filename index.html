@@ -527,7 +527,7 @@
     <button class="compare-toggle" id="progresoBtn">Progreso Locales</button>
     <button class="compare-toggle" id="compareBtn">Comparar locales</button>
     <div id="syncStatus" class="sync">Conectando…</div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 14/10/2026 · 20:55</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Versión: 15/10/2026 · 22:50</div>
     <button class="sidebtn" type="button" onclick="changeCode()">Cambiar clave de acceso</button>
     <button class="sidebtn" type="button" onclick="exportBackup()">Exportar respaldo (JSON)</button>
     <label class="sidebtn" for="importFile" style="text-align:center;cursor:pointer;display:block;">Importar respaldo (JSON)</label>
@@ -1969,8 +1969,8 @@ function pyIso(iso){ return addDaysISO(iso,-364); }
 function pyDay(storeId, iso){ const r=pyData(storeId)[pyIso(iso)]; return r ? { date:pyIso(iso), sales:Number(r[0])||0, articulos:Number(r[1])||0, tickets:Number(r[2])||0 } : null; }
 function isLoadedDay(e){ return e && e.sales!==null && e.sales!==undefined && ((Number(e.sales)||0)>0 || (Number(e.tickets)||0)>0); }
 function pyMatched(storeId, entries){
-  const out={ cur:{sales:0,articulos:0,tickets:0}, ant:{sales:0,articulos:0,tickets:0}, days:0 };
-  (entries||[]).forEach(e=>{ if(!isLoadedDay(e)) return; const p=pyDay(storeId,e.date); if(!p) return; out.days++;
+  const out={ cur:{sales:0,articulos:0,tickets:0}, ant:{sales:0,articulos:0,tickets:0}, days:0, loaded:0 };
+  (entries||[]).forEach(e=>{ if(!isLoadedDay(e)) return; out.loaded++; const p=pyDay(storeId,e.date); if(!p) return; out.days++;
     out.cur.sales+=Number(e.sales)||0; out.cur.articulos+=Number(e.articulos)||0; out.cur.tickets+=Number(e.tickets)||0;
     out.ant.sales+=p.sales; out.ant.articulos+=p.articulos; out.ant.tickets+=p.tickets; });
   return out;
@@ -1978,12 +1978,12 @@ function pyMatched(storeId, entries){
 // Crecimiento vs. año anterior: con datos diarios compara los mismos días; si no hay, usa el total mensual repartido por día
 function growthData(storeId, start, end){
   const ents = entriesInRange(storeId, start, end);
-  if(hasPyDaily(storeId)){ const m=pyMatched(storeId, ents); if(m.days>0 && m.ant.sales>0) return { cur:m.cur.sales, ant:m.ant.sales, daily:true, days:m.days }; }
+  if(hasPyDaily(storeId)){ const m=pyMatched(storeId, ents); if(m.days>0 && m.days===m.loaded && m.ant.sales>0) return { cur:m.cur.sales, ant:m.ant.sales, daily:true, days:m.days }; }
   return { cur:aggEntries(ents).sales, ant:expectedForRange(storeId, start, end, 'ant', 'importe'), daily:false };
 }
-// Año anterior de un mes para la vista mensual: con datos diarios, solo los días que ya tienen venta este año
+// Año anterior de un mes para la vista mensual: con datos diarios, solo los días que ya tienen venta este año; si el año anterior diario no cubre todos esos días, se usa el total del mes cargado arriba
 function antForMonth(storeId, m){
-  if(hasPyDaily(storeId)){ const mm=pyMatched(storeId, entriesForMonth(storeId, m)); if(mm.days>0) return { importe:mm.ant.sales, articulos:mm.ant.articulos, tickets:mm.ant.tickets, daily:true }; }
+  if(hasPyDaily(storeId)){ const mm=pyMatched(storeId, entriesForMonth(storeId, m)); if(mm.days>0 && mm.days===mm.loaded) return { importe:mm.ant.sales, articulos:mm.ant.articulos, tickets:mm.ant.tickets, daily:true }; }
   return getAnt(storeId, m);
 }
 function parsePyNumber(x){
